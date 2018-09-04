@@ -1,0 +1,2 @@
+python smart_motion_control.py
+pause
