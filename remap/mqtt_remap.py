@@ -130,7 +130,8 @@ def on_message(client, userdata, msg):
         a = int(a)
         r = int(r)
         d = int(msg.payload)
-        if iomode=='r':
+        # если данные записывают в extbus-устройство - значит их нужно "перенести" и записать в mqtt-устройство
+        if iomode=='w':
           # data from device
           logging.info('a=%s r=%s io=%s d=%s' % (a,r,iomode,d))
           # ищем по ключу "адрес,регистр"
@@ -151,6 +152,7 @@ def on_message(client, userdata, msg):
         return # Fail - пришли плохие входные данные, или не отработал eval, игнорим
     # парсинг extbus не удался - значит это какойто другой путь, пробуем поискать в ремапинге
     elif msg.topic.lower() in remapToExtbus:
+      # если данные сообщает mqtt-устройство - значит их нужно "перенести" и сообщить от лица extbus-устройства.
       # Если нашли ремап - тогда вперед!
       for i in remapToExtbus[msg.topic.lower()]:
         # (1,2,'v*2')
@@ -177,8 +179,9 @@ def on_message(client, userdata, msg):
 
         # публикуем
         if value != None:
-          client.publish('extbus/%s/%s/w' % (a, r), value, retain=True)
-          logging.info(msg.topic + ' -> ' + 'extbus/%s/%s/w' % (a, r) + ' = ' + str(value))
+          client.publish('extbus/%s/%s/r' % (a, r), value, retain=False)
+          client.publish('extbus/%s/%s/s' % (a, r), value, retain=True)
+          logging.info(msg.topic + ' -> ' + 'extbus/%s/%s/r' % (a, r) + ' = ' + str(value))
 
 ### MAIN: ###
 
