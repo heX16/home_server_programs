@@ -109,7 +109,7 @@ def on_connect(client, userdata, flags, rc):
     # Subscribing in on_connect() means that if we lose the connection and
     # reconnect then subscriptions will be renewed.
     client.subscribe("extbus/+/+/w")
-    client.subscribe("extbus/+/+/r")
+    client.subscribe("extbus/+/+/p")
     for i in remapToExtbus.keys():
       logging.info('subscribe: ' + str(i))
       client.subscribe(i)
@@ -181,8 +181,8 @@ def on_message(client, userdata, msg):
 
         # публикуем
         if value != None:
-          client.publish('extbus/%s/%s/r' % (a, r), value, retain=False)
-          client.publish('extbus/%s/%s/s' % (a, r), value, retain=True)
+          client.publish('extbus/%s/%s/p' % (a, r), value, retain=False)
+          client.publish('extbus/%s/%s/r' % (a, r), value, retain=True)
           logging.info(msg.topic + ' -> ' + 'extbus/%s/%s/r' % (a, r) + ' = ' + str(value))
 
 ### MAIN: ###

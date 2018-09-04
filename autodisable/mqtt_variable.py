@@ -47,7 +47,7 @@ class csMqttVar:
     return self.path+'/w'
 
   def path_read(self):
-    return self.path+'/r'
+    return self.path+'/p'
 
   def connect_event(self):
     ''' процедура вызывается из csMqttEvents '''
