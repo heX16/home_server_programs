@@ -64,6 +64,11 @@ class csMqttVarAutodisable(csMqttVarRemove):
     self.sheduler = sheduler
     self.timer_off = TimerEvent(self.sheduler, float(off_time) * 60, self.do_disable)
 
+  def path_read(self):
+    # перекрываем метод - нужен другой путь чтения, чтобы он получал данные от retain после перезагрузки
+    # при этом таймеры будут сброшенны, но это лучше чем таймеры вообще не запустятся.
+    return self.path+'/r'
+
   def change_event(self, new_value):
     super().change_event(new_value)
     if new_value == '1':
