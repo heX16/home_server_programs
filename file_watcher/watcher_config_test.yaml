@@ -1,0 +1,12 @@
+﻿commands:
+  test1: 'echo TEST1'
+  test2: 'echo TEST2'
+  test3_dir: 'echo TEST3'
+  test4: 'echo TEST4'
+  test5: 'echo TEST5'
+files:
+  'file_watcher/watcher.py': test1
+  'file_watcher/watcher_config_test.yaml': test2
+dirs:
+  'file_watcher': test3_dir
+
