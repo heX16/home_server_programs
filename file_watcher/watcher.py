@@ -2,15 +2,11 @@
 # coding: utf-8
 
 '''
-Загрузить список уже установленных сервисов и дату модификации файла (хранится в отдельном файле).
-Загрузить список сервисов из папки "service".
-1. Если появился новый сервис - скопировать файл, дать команду {обновления, включения, запуска}.
-2. Если исчез сервис - дать команду {остановки, отключения}, удалить старую копию файла, дать команду обновления.
-3. Если сервис обновился - дать команду остановки, скопировать файл, дать команду {обновления, перезапуска}.
+TODO: добавить описание...
 '''
 
 usage = '''
-Usage: watch.py --config=YAML_CFG [--dir=PATH] [--store=FILE] [--ext=EXT] [--daemon] [--scantime=SECOND]
+Usage: watcher.py --config=YAML_CFG [--dir=PATH] [--store=FILE] [--ext=EXT] [--daemon] [--scantime=SECOND]
 
 Options:
   --config=YAML_CFG   YAML config where desc. action on file/dir changes [default: watcher_config.yaml]
@@ -128,7 +124,7 @@ def main():
     store_cmp.compare()
     if options['--daemon'] != True:
       break
-    time.sleep(options['--scantime'])
+    time.sleep(int(options['--scantime']))
 
 if __name__ == "__main__":
   main()
