@@ -13,7 +13,7 @@ extbus_proxy:
 file_watcher:
   file_comparator.py: 2018-09-06 20:40:40
   watch_example.py: 2018-09-06 20:48:02
-  watcher.py: 2018-09-07 00:14:57
+  watcher.py: 2018-09-07 00:25:02
   watcher_config_test.yaml: 2018-09-07 00:11:36
   watcher_test.bat: 2018-09-07 00:09:01
 grand_access:

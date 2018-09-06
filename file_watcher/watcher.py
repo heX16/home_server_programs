@@ -10,13 +10,15 @@
 '''
 
 usage = '''
-Usage: watch.py [--config=YAML_CFG] [--dir=PATH] [--store=FILE] [--ext=EXT]
+Usage: watch.py --config=YAML_CFG [--dir=PATH] [--store=FILE] [--ext=EXT] [--daemon] [--scantime=SECOND]
 
 Options:
   --config=YAML_CFG   YAML config where desc. action on file/dir changes [default: watcher_config.yaml]
   --dir=PATH    path to directory from copy service file
-  --store=FILE  name of YAML file where stored files info [default: service_list.yaml]
+  --store=FILE  name of YAML file where stored files info [default: watcher_store.yaml]
   --ext=EXT     extension of service [default: *]
+  --daemon      run to infinity loop (by default run once and end)
+  --scantime=SECOND   scan interval (for daemon) [default: 60]
 '''
 
 from docopt import docopt # pip3 install docopt
@@ -27,6 +29,7 @@ from pathlib import Path
 import yaml
 import shutil # chown
 import os # chmod
+import time
 
 def shell(command: str):
   try:
@@ -121,7 +124,11 @@ def main():
   store_cmp.ignore_list.append(Path(options['--store']).name)
   store_cmp.load_config(options['--config'])
 
-  store_cmp.compare()
+  while True:
+    store_cmp.compare()
+    if options['--daemon'] != True:
+      break
+    time.sleep(options['--scantime'])
 
 if __name__ == "__main__":
   main()
