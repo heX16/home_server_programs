@@ -15,7 +15,7 @@ from smart_motion_control_lib import *
 from mqtt_variable import *
 
 usage = '''
-Usage: install_service.py --config=FILE
+Usage: install_service.py [--config=FILE] [--mqtt=HOST] [--quiet] [--verbose]
 
 Options:
   --config=FILE  config file       [default: config.yaml]
@@ -182,7 +182,7 @@ class csSmartSwitchMqtt:
         if hour >= 0 and hour < (start + length - 24):
           return True
       # обычная проверка (причем если диапазон выходит за 24 часа то нам это не заботит - ошибки не будет)
-      if hour >= start and hour_e < start + length:
+      if hour >= start and hour < start + length:
         return True
     return False
 
