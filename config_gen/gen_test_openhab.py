@@ -319,7 +319,7 @@ for tab in tab_list:
   with io.open('../sitemaps/%s.sitemap'%tab, 'w', encoding='utf-8') as outfile:
     outfile.write( '\n'.join(t) )
 
-# sitemap
+# sitemap - один файл для всех элементов
 t = ['sitemap default label="Дом (весь)" {']
 for tab in tab_list:
   lastgrp = ''
@@ -333,7 +333,7 @@ for tab in tab_list:
   t = t + ['  }']
 t = t + ['}'] + ['']
 
-with io.open('../sitemaps/default.sitemap', 'w', encoding='utf-8') as outfile:
+with io.open('../sitemaps/All_Home.sitemap', 'w', encoding='utf-8') as outfile:
   outfile.write( '\n'.join(t) )
 
 # write transform
