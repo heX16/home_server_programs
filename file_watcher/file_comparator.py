@@ -89,7 +89,7 @@ class FileStoreComparator:
       datech = files.get(f, None)
 
       # compare dir
-      if self.recursion and type(datech)==dict and type(v)==dict:
+      if self.recursion and isinstance(datech,dict) and isinstance(v,dict):
         self.compare_list(v, datech, path+[f]) # <- RECURSION
         # remove from 'files' list - nedded for next comparsion step.
         del files[f]
@@ -100,10 +100,10 @@ class FileStoreComparator:
         # present in 'store', none in 'files' - file removed
         del store[f]
         self.event_file_removed(path+[f])
-      # if type(datech)!=type(v) ... - file_to_dir, dir_to_file....
+      # if isinstance... type(datech)!=type(v) ... - file_to_dir, dir_to_file....
       else:
         #todo: WIP!
-        if type(datech)==dict:
+        if isinstance(datech,dict):
           continue
 
         # present in 'store' and 'files'.

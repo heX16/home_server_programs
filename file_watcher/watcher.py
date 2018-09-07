@@ -22,7 +22,7 @@ from file_comparator import *
 from pprint import *
 from subprocess import *
 from pathlib import Path
-import yaml
+import oyaml as yaml
 import shutil # chown
 import os # chmod
 import time
@@ -31,13 +31,13 @@ def shell(command: str):
   try:
     c = None
     c = run(command, shell=True)
-    if c!=None and c.stdout!='' and type(c.stdout)==str:
+    if c!=None and c.stdout!='' and isinstance(c.stdout,str):
       print(c.stdout)
   except FileNotFoundError as e:
     print("Error: FileNotFound. Command: \"" + command + "\"")
   except Exception as e:
     print("Error: " + type(e) + ". Command: \"" + command + "\"")
-    if c!=None and c.stderr!='' and type(c.stderr)==str:
+    if c!=None and c.stderr!='' and isinstance(c.stderr,str):
       print("Output:")
       print(c.stderr)
 
@@ -49,7 +49,7 @@ class FileStoreComparator2(FileStoreComparator):
     self.run_commands = []
 
   def activate_cmd(self, cmd):
-    if type(cmd)==str:
+    if isinstance(cmd,str):
       cmd=[cmd]
     for c in cmd:
       if c in self.run_commands:
