@@ -40,21 +40,21 @@ def sh(command: str, *params):
 def event_file_added(file_name):
   print('Added:', file_name)
   sh("cp service/{0} /etc/systemd/system/", file_name)
-  sh("systemctl enable {0}", file_name)
-  sh("systemctl start {0}", file_name)
+  sh("sudo systemctl enable {0}", file_name)
+  sh("sudo systemctl start {0}", file_name)
 
 def event_file_removed(file_name):
   print('Removed:', file_name)
-  sh("systemctl stop {0}", file_name)
-  sh("systemctl disable {0}", file_name)
+  sh("sudo systemctl stop {0}", file_name)
+  sh("sudo systemctl disable {0}", file_name)
   sh("rm /etc/systemd/system/{0}", file_name)
 
 def event_file_changed(file_name):
   print('Changed:', file_name)
-  sh("systemctl stop {0}", file_name)
+  sh("sudo systemctl stop {0}", file_name)
   sh("cp service/{0} /etc/systemd/system", file_name)
-  sh("systemctl enable {0}", file_name)
-  sh("systemctl start {0}", file_name)
+  sh("sudo systemctl enable {0}", file_name)
+  sh("sudo systemctl start {0}", file_name)
 
 def event_file_changed_store_error(file_name):
   print('Store error:', file_name)
