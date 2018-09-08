@@ -94,13 +94,13 @@ def load_config(filename):
 
       a = int(a)
       r = int(r)
-      if dr=='>':
+      if dr=='>' or dr=='R>':
         i = remapToMqtt.get( (a,r), [])
-        i.append( (path, recalc) )
+        i.append( (path, recalc, dr) )
         remapToMqtt[(a,r)] = i;
-      if dr=='<':
+      if dr=='<' or dr=='<W':
         i = remapToExtbus.get( path, [])
-        i.append( (a, r, recalc) )
+        i.append( (a, r, recalc, dr) )
         remapToExtbus[path] = i;
 
 # The callback for when the client receives a CONNACK response from the server.
@@ -108,8 +108,9 @@ def on_connect(client, userdata, flags, rc):
     logging.info("Connected with result code "+str(rc))
     # Subscribing in on_connect() means that if we lose the connection and
     # reconnect then subscriptions will be renewed.
+    client.subscribe("extbus/+/+/r")
     client.subscribe("extbus/+/+/w")
-    client.subscribe("extbus/+/+/p")
+    #client.subscribe("extbus/+/+/p")
     for i in remapToExtbus.keys():
       logging.info('subscribe: ' + str(i))
       client.subscribe(i)
@@ -133,23 +134,24 @@ def on_message(client, userdata, msg):
         r = int(r)
         d = int(msg.payload)
         # если данные записывают в extbus-устройство - значит их нужно "перенести" и записать в mqtt-устройство
-        if iomode=='w':
-          # data from device
-          logging.info('a=%s r=%s io=%s d=%s' % (a,r,iomode,d))
-          # ищем по ключу "адрес,регистр"
-          if (a,r) in remapToMqtt:
-            # результат поиска это массив - идем по массиву
-            for i in remapToMqtt[(a,r)]:
-              # в каждом элементе массива два элемента - "путь" и "пересчет"
-              newpath = i[0]
-              recalc = i[1]
+        # data from device
+        logging.info('a=%s r=%s io=%s d=%s' % (a,r,iomode,d))
+        # ищем по ключу "адрес,регистр"
+        if (a,r) in remapToMqtt:
+          # результат поиска это массив - идем по массиву
+          for i in remapToMqtt[(a,r)]:
+            # в каждом элементе массива два элемента - "путь" и "пересчет"
+            newpath = i[0]
+            recalc = i[1]
+            dirMode = i[2]
+            if (dirMode=='>' and iomode=='w') or (dirMode=='R>' and iomode=='r'):
               value = d
               # пересчет
               if recalc!='':
                 v = value
                 value = eval(recalc)
               logging.info('-> ' + newpath + '=' + str(value))
-              client.publish(newpath, value, retain=True)
+              client.publish(newpath, value, retain=False)
       except:
         return # Fail - пришли плохие входные данные, или не отработал eval, игнорим
     # парсинг extbus не удался - значит это какойто другой путь, пробуем поискать в ремапинге
@@ -157,10 +159,12 @@ def on_message(client, userdata, msg):
       # если данные сообщает mqtt-устройство - значит их нужно "перенести" и сообщить от лица extbus-устройства.
       # Если нашли ремап - тогда вперед!
       for i in remapToExtbus[msg.topic.lower()]:
-        # (1,2,'v*2')
+        # (1,2,'v*2','<')
         a = i[0]
         r = i[1]
         recalc = i[2]
+        dirMode = i[3]
+
         # подготавливаем данные
         try:
           # чистим от типа str (если возможно)
@@ -181,8 +185,11 @@ def on_message(client, userdata, msg):
 
         # публикуем
         if value != None:
-          client.publish('extbus/%s/%s/p' % (a, r), value, retain=False)
-          client.publish('extbus/%s/%s/r' % (a, r), value, retain=True)
+          if dirMode=='<':
+            client.publish('extbus/%s/%s/p' % (a, r), value, retain=False)
+            client.publish('extbus/%s/%s/r' % (a, r), value, retain=True)
+          if dirMode=='<W':
+            client.publish('extbus/%s/%s/w' % (a, r), value, retain=False)
           logging.info(msg.topic + ' -> ' + 'extbus/%s/%s/r' % (a, r) + ' = ' + str(value))
 
 ### MAIN: ###
