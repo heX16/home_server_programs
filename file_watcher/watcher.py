@@ -101,9 +101,15 @@ class FileStoreComparator2(FileStoreComparator):
     for k,v in self.run_commands.items():
       if v:
         self.run_commands[k] = False
-        print('run:', k)
+        print('run: ' + k)
         shell(self.config['commands'][k])
 
+    #todo: add options
+    # fix FS state after run commands
+    super().compare()
+    # and ignore changes
+    for k in self.run_commands.keys():
+      self.run_commands[k] = False
 
 
 def main():
