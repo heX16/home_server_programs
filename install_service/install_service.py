@@ -61,6 +61,7 @@ def event_file_changed_store_error(file_name):
 
 
 def main():
+  print('Begin...')
   # параметры
   options = docopt(usage)
 
@@ -72,6 +73,7 @@ def main():
   store_cmp.on_changed_store_error = event_file_changed_store_error
 
   store_cmp.compare()
+  print('End.')
 
 if __name__ == "__main__":
   main()
