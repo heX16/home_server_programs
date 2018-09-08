@@ -32,23 +32,21 @@ def s(b):
   return b.decode("utf-8")
 
 class csSmartSwitchMqttPathOptions:
-  ''' Опции - Пути к MQTT '''
+  ''' Опции '''
 
   def __init__(self):
     self.name=''       # "человеческое" имя
-    self.value_path='' # путь к оперативным значениям
-    self.opt_path=''   # путь к опциям
-    self.relay_r=''    # реле (чтение)
-    self.relay_w=''    # реле (запись)
-    self.mot_det_r=''  # ДД (чтение)
-    self.switch_r=''   # включатель кнопочный (чтение)
-    self.time_motion=''  # длительность включения от сработки ДД (#уставка)
-    self.time_switch_auto_off='' # длительность отключения ДД при выключении вручную (смартфоном или включателем) (#уставка)
-    self.time_disable_start1=''  # время когда датчик движения не работает. начало времени. (указывается в часах 0..24)
-    self.time_disable_len1=''    # время когда датчик движения не работает. продолжительность. (указывается в часах 0..24)
-    self.time_disable_start2=''  # идентично time_disable_start1
-    self.time_disable_len2=''    # идентично time_disable_len1
-    self.auto_disable_r='' # опция: отключить ДД
+    self.relay_r=''    # mqtt путь к реле (чтение)
+    self.relay_w=''    # mqtt путь к реле (запись)
+    self.mot_det_r=''  # mqtt путь к ДД (чтение)
+    self.switch_r=''   # mqtt путь включатель кнопочный (чтение)
+    self.time_motion=60         # длительность включения света от сработки ДД (#уставка)
+    self.time_switch_auto_off=5 # длительность отключения самого ДД при выключении вручную (смартфоном или включателем) (#уставка)
+    self.time_disable_start1=0  # время когда датчик движения не работает. начало времени. (указывается в часах 0..24)
+    self.time_disable_len1=0    # время когда датчик движения не работает. продолжительность. (указывается в часах 0..24)
+    self.time_disable_start2=0  # идентично time_disable_start1
+    self.time_disable_len2=0    # идентично time_disable_len1
+    #self.disable='' # опция: отключить ДД
     #self.sunset_enabled='' # опция: используется отключение автоматики после восхода солнца
     #self.sunrise_r=''  # флаг что солнце зашло
     #self.sunset_r=''   # флаг что солнце взошло
@@ -88,6 +86,7 @@ class csSmartSwitchMqtt:
   def __init__(self, switch_obj, mqtt_client, event_list, events_list2, opt: csSmartSwitchMqttPathOptions):
     self.mqtt_client = mqtt_client
     self.switch = switch_obj
+    # todo: rename to 'options'
     self.mqtt = opt # mqtt path
     self.prev_switch = None
     self.prev_mot_det = None
@@ -98,10 +97,11 @@ class csSmartSwitchMqtt:
     #bool filter: lambda m: True if m=='1' else False)
     self.events_list2.add_connect_event(self.event_connect)
     self.events_list2.add_disconnect_event(self.event_disconnect)
-    self.time_disable_start1=csMqttVarLocal(mqtt_client, event_list, self.mqtt.opt_path+'/'+self.mqtt.time_disable_start1, 0, lambda m: int(m))
-    self.time_disable_len1  =csMqttVarLocal(mqtt_client, event_list, self.mqtt.opt_path+'/'+self.mqtt.time_disable_len1,   0, lambda m: int(m))
-    self.time_disable_start2=csMqttVarLocal(mqtt_client, event_list, self.mqtt.opt_path+'/'+self.mqtt.time_disable_start2, 0, lambda m: int(m))
-    self.time_disable_len2  =csMqttVarLocal(mqtt_client, event_list, self.mqtt.opt_path+'/'+self.mqtt.time_disable_len2,   0, lambda m: int(m))
+
+    self.time_disable_start1 = int(self.mqtt.time_disable_start1)
+    self.time_disable_len1   = int(self.mqtt.time_disable_len1  )
+    self.time_disable_start2 = int(self.mqtt.time_disable_start2)
+    self.time_disable_len2   = int(self.mqtt.time_disable_len2  )
 
   def event_connect(self, client, userdata, flags, rc):
     def sub(path, event):
@@ -192,8 +192,9 @@ class csSmartSwitchMqtt:
 
   def is_disable_hour(self, hour):
     ''' Проверка времени - True значит мы попали в "запрещенные часы" '''
-    #####if self.check_time(hour, self.time_disable_start1.value, self.time_disable_len1.value): return True
-    if self.check_time(hour, self.time_disable_start2.value, self.time_disable_len2.value):
+    if self.check_time(hour, self.time_disable_start1, self.time_disable_len1):
+      return True
+    if self.check_time(hour, self.time_disable_start2, self.time_disable_len2):
       return True
     return False
 
@@ -225,7 +226,10 @@ class csSmartSwitchMqtt:
       self.prev_state = self.switch.state
       logging.debug('state: '+str(self.prev_state))
 
+
+
 def apply_config_dict(obj, config_dict: dict):
+  ''' Присваивает словарь в обьект '''
   for k,v in config_dict.items():
     setattr(obj, k, v)
 
@@ -280,7 +284,7 @@ def main():
   for cfg in cfg_list:
     logging.info("Cfg name:" + cfg.name)
     # создаем переключатель
-    switchTmp = SmartMotDetSwitch(scheduler, 20, 5)
+    switchTmp = SmartMotDetSwitch(scheduler, cfg.time_motion, cfg.time_switch_auto_off)
 
     # создаем переключатель подключенный к mqtt
     swMqtt = swMqtt + [csSmartSwitchMqtt(switchTmp, mqttc, mqttEvents, eventsCollector, cfg)]
