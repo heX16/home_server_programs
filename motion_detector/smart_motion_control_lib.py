@@ -1,9 +1,8 @@
 from enum import Enum
-import sched
 import pprint
 from easy_timer import *
 
-class SmartMotDetSwitch:
+class MotionDetectorAlgo:
   ''' Smart Motion Detect Switch
   Алгоритм включения света с датчиком движения.
   Алгоритм, краткое описание:
@@ -40,6 +39,7 @@ class SmartMotDetSwitch:
     def __init__(self):
       self.enabled = False # состояние реле (True - включить свет)
       self.ignore_change = False # флаг 'не высылать команду при изменении enabled'. ВНИМАНИЕ: снимать флаг нужно 'снаружи' (вручную)
+      self.enabled_by_switch = False # использовался включатель
 
   def __init__(self, scheduler, time_light_active = 60, time_motdet_ignore = 5):
     self.state = self.States.init # состояние алгоритма
@@ -86,6 +86,7 @@ class SmartMotDetSwitch:
     elif self.state==st.enable_by_switch or self.state==st.enable_by_dist:
         # Выдаем флаг что свет нужно включить
         data_out.enabled = True
+        data_out.enabled_by_switch = True
         # останавливаем таймеры
         self.t_light_off.stop()
         self.t_motdet_ignore.stop()
@@ -141,6 +142,7 @@ class SmartMotDetSwitch:
     if self.data_in.auto_off:
       self.data_in.motion = False
     self.data_out.enabled = False
+    self.data_out.enabled_by_switch = False
     self.data_in.t_light_off = self.t_light_off.Q
     self.data_in.t_motdet_ignore = self.t_motdet_ignore.Q
     # алгоритм
@@ -155,7 +157,7 @@ class SmartMotDetSwitch:
 
 def test():
   scheduler = sched.scheduler()
-  sw = SmartMotDetSwitch(scheduler)
+  sw = MotionDetectorAlgo(scheduler)
   sw.run()
   pprint.pprint(sw.state)
 
@@ -173,7 +175,7 @@ def test():
       print('enabled!')
     s = input(sw.state)
     # сбрасываем входные данные
-    sw.data_in = SmartMotDetSwitch.DataIn()
+    sw.data_in = MotionDetectorAlgo.DataIn()
     # выставляем
     if s=='s':
       sw.data_in.switch=True
