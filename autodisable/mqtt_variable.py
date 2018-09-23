@@ -96,8 +96,8 @@ class csMqttVarRemove(csMqttVar):
 
 
 class csMqttVarLocal(csMqttVar):
-  ''' Местная переменная (устройство).
-  следит за '/w' и само отписывается на '.../r' - само является устройством и _воспринимает_ записи состояния. '''
+  """ Местная переменная (устройство).
+  следит за 'path_write' и само отписывается на 'path_read' - само является устройством и _воспринимает_ записи состояния. """
 
   def connect_event(self):
     logging.debug('csMqttVar.connect_event sub: '+self.path_write())
@@ -127,5 +127,21 @@ class csMqttVarLocal(csMqttVar):
     ''' Запоминаем новое значение и высылаем нотификацию о смене значения '''
     if type(value)==str:
       self.value = value
-      self.mqtt_client.publish(self.path_read(), value)
+      self.mqtt_client.publish(self.path_read(), value, retain=False)
+
+
+class csMqttVarLocalExtbus(csMqttVarLocal):
+  """ Местная переменная с дублированием в retain (устройство).
+  следит за 'path_write' и само отписывается на 'path_read' и 'path_read_retain'.
+  само является устройством и _воспринимает_ записи состояния. """
+
+  def path_read_retain(self):
+    return self.path+'/r'
+
+  def set_value(self, value):
+    """ Запоминаем новое значение и высылаем нотификацию о смене значения """
+    super().set_value(value)
+    if type(value)==str:
+      self.mqtt_client.publish(self.path_read_retain(), value, retain=True)
+
 
