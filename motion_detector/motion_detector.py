@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+#todo: use async io
+
 import paho.mqtt.client as paho  # pip install paho-mqtt
 import yaml  # pip3 install pyyaml
 import math
@@ -16,13 +18,14 @@ from smart_motion_control_lib import *
 import sunset_lib
 
 usage = '''
-Usage: install_service.py [--config=FILE] [--mqtt=HOST] [--quiet] [--verbose]
+Usage: install_service.py [--config=FILE] [--mqtt=HOST] [--quiet] [--verbose] [--show]
 
 Options:
   --config=FILE  config file       [default: config.yaml]
   --mqtt=HOST    MQTT server name  [default: localhost]
   --quiet        print less text
   --verbose      print more text
+  --show         show config info, not run daemon
 '''
 
 debug = True
@@ -201,8 +204,10 @@ class csMotionDetectorMqtt:
         else:
            t_begin = datetime.datetime.combine(datetime.datetime.today(), sun.sunset())  + datetime.timedelta(hours=self.cfg.sunset)
            t_end   = datetime.datetime.combine(datetime.datetime.today(), sun.sunrise()) + datetime.timedelta(hours=self.cfg.sunrise, days=1)
+           t_begin2= datetime.datetime.combine(datetime.datetime.today(), sun.sunset())  + datetime.timedelta(hours=self.cfg.sunset, days=-1)
+           t_end2  = datetime.datetime.combine(datetime.datetime.today(), sun.sunrise()) + datetime.timedelta(hours=self.cfg.sunrise)
            t = datetime.datetime.now()
-           if t > t_begin and t < t_end:
+           if (t > t_begin and t < t_end) or (t > t_begin2 and t < t_end2):
              return False
            else:
              return True
@@ -330,6 +335,16 @@ def main():
         logging.debug('DD disable: ' + str(swMqtt1.is_disable_hour(swMqtt1.get_current_hour())))
         # scheduler.run(False)
         # swMqtt1.run()
+        return
+
+    if options['--show']:
+        logging.basicConfig(stream=sys.stderr, level=logging.INFO)
+        for sw in swMqtt:
+            t_begin = datetime.datetime.combine(datetime.datetime.today(), sun.sunset())  + datetime.timedelta(hours=sw.cfg.sunset)
+            t_end   = datetime.datetime.combine(datetime.datetime.today(), sun.sunrise()) + datetime.timedelta(hours=sw.cfg.sunrise, days=1)
+            logging.info('Switch: '+str(sw.cfg.name))
+            logging.info('  Sunset begin: '+str(t_begin))
+            logging.info('  Sunset end: '+str(t_end))
         return
 
     mqttc.connect(options['--mqtt'])
