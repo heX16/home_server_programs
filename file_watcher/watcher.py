@@ -2,7 +2,17 @@
 # coding: utf-8
 
 '''
-TODO: добавить описание...
+Программа которая обнаруживает изменения в дирикториях и/или файлах.
+И если произошло изменение то запускает программу.
+
+Конфигурация:
+commands: # список команд.
+  ИмяКоманды: 'Текст команды'
+files:    # файлы для отслеживания.
+  'ПутьФайла': ИмяКоманды
+dirs:     # дириктории для отслеживания.
+  'ПутьДириктории': ИмяКоманды
+
 '''
 
 usage = '''
@@ -89,10 +99,8 @@ class FileStoreComparator2(FileStoreComparator):
 
   def load_config(self, filename: str):
     # Read YAML file
-    cfg_list = None
     with open(filename, 'r', encoding='utf8') as stream:
         self.config = yaml.load(stream)
-    #self.run_commands = {k: False   for k in self.config['commands'].keys() }
     self.run_commands = dict.fromkeys(self.config['commands'].keys(), False)
 
   def compare(self):
