@@ -71,15 +71,15 @@ class FileEventsCrond:
 
   def file_added(self, file_name):
     print('Added:', file_name)
-    sh("cp {1}{0} /etc/crond.d/", file_name, self.dir)
+    sh("cp {1}{0} /etc/cron.d/", file_name, self.dir)
 
   def file_removed(self, file_name):
     print('Removed:', file_name)
-    sh("rm /etc/crond.d/{0}", file_name)
+    sh("rm /etc/cron.d/{0}", file_name)
 
   def file_changed(self, file_name):
     print('Changed:', file_name)
-    sh("cp {1}{0} /etc/crond.d/", file_name, self.dir)
+    sh("cp {1}{0} /etc/cron.d/", file_name, self.dir)
 
   def file_changed_store_error(self, file_name):
     print('Store error:', file_name)
