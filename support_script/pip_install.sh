@@ -2,7 +2,8 @@
 
 apt install python3-pip
 pip3 install --upgrade setuptools
-python3 -m pip install --upgrade pip
+
+# ??? python3 -m pip install --upgrade pip
 
 # транслитерация
 pip3 install transliterate
@@ -17,3 +18,7 @@ pip3 install pyexcel-ods
 pip3 install docopt
 # уведомления об изменении файлов
 pip3 install watchdog
+
+# управление роутером openwrt (в роутер нужно установить luci-mod-rpc)
+#pip3 install openwrt-remote-manager - пакет устарел
+
