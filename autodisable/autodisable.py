@@ -134,6 +134,9 @@ def main():
 
   logging.info('mqtt connect')
 
+  #todo: user,pass
+  #if options['--mqtt_user']:
+  #  c.username_pw_set(options['--mqtt_user'], options['--mqtt_pass'])
   mqttClient.connect(options['--mqtt'])
 
   logging.info('run')

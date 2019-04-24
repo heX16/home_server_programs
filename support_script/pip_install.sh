@@ -11,6 +11,8 @@ pip3 install transliterate
 pip3 install pyyaml
 # MQTT
 pip3 install paho-mqtt
+# MQTT async
+pip3 install aiomqtt
 # формат ODS - LibreOffice
 pip3 install pyexcel
 pip3 install pyexcel-ods
@@ -18,6 +20,7 @@ pip3 install pyexcel-ods
 pip3 install docopt
 # уведомления об изменении файлов
 pip3 install watchdog
+
 
 # управление роутером openwrt (в роутер нужно установить luci-mod-rpc)
 #pip3 install openwrt-remote-manager - пакет устарел
