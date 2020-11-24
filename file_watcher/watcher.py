@@ -17,7 +17,7 @@ dirs:     # дириктории для отслеживания.
 '''
 
 usage = '''
-Usage: watcher.py --config=YAML_CFG [--dir=PATH] [--store=FILE] [--ext=EXT] [--daemon] [--scantime=SECOND]
+Usage: watcher.py --config=YAML_CFG [--dir=PATH] [--store=FILE] [--ext=EXT] [--daemon] [--scantime=SECOND] [--skip-link]
 
 Options:
   --config=YAML_CFG   YAML config where desc. action on file/dir changes [default: watcher_config.yaml]
@@ -26,6 +26,7 @@ Options:
   --ext=EXT     extension of service [default: *]
   --daemon      run to infinity loop (by default run once and end)
   --scantime=SECOND   scan interval (for daemon) [default: 60]
+  --skip-link   ignore changes in symlink files
 '''
 
 from docopt import docopt # pip3 install docopt
@@ -35,7 +36,7 @@ from subprocess import *
 from pathlib import Path
 import oyaml as yaml
 import shutil # chown
-import os # chmod
+import os # chmod, islink
 import time
 
 def shell(command: str):
@@ -59,6 +60,7 @@ class FileStoreComparator2(FileStoreComparator):
     self.config_path = '' # path to config for reload on change
     self.ignore_list = [] # NOTE: скрывает указанный файл в каждой дире!!! - это поведение надобы пофиксить но нет времени...
     self.run_commands = []
+    self.skip_link = False
 
   def activate_cmd(self, cmd):
     if isinstance(cmd,str):
@@ -77,10 +79,14 @@ class FileStoreComparator2(FileStoreComparator):
     if path_str in self.config['files']:
       self.activate_cmd(self.config['files'][path_str])
     # find in dirs
-    for k,cmd in self.config['dirs'].items():
-      if path_str[:len(k)] == k:
-        print('Dir changed: ' + k)
-        self.activate_cmd(cmd)
+    for config_path, config_cmd in self.config['dirs'].items():
+      if path_str[:len(config_path)] == config_path:
+        print('Dir changed: ' + config_path)
+        self.activate_cmd(config_cmd)
+      # special mode - any change in targetdir
+      if config_path == '.':
+        print('Dir changed: ' + self.targetdir)
+        self.activate_cmd(config_cmd)
 
   def event_file_added(self, path):
     print('Added: ' + "/".join(path))
@@ -98,7 +104,11 @@ class FileStoreComparator2(FileStoreComparator):
     print('Store error:' + "/".join(path))
 
   def event_filter(self, path, isdir):
-    if (isdir and '__pycache__' in path) or (not isdir and path[-1] in self.ignore_list):
+    #todo: __pycache__ - is hardcoded, add options or config for this.
+
+    #todo: normalize path in: targetdir + "/" + "/".join(path). Example: targetdir='/etc', targetdir='etc', targetdir='/etc/'...
+
+    if (isdir and '__pycache__' in path) or (not isdir and path[-1] in self.ignore_list) or (self.skip_link and os.path.islink(self.targetdir + "/" + "/".join(path))):
       return False
     else:
       return True
@@ -145,6 +155,7 @@ def main():
   store_cmp.file_extension = options['--ext']
   store_cmp.ignore_list.append(Path(options['--store']).name)
   store_cmp.config_path = options['--config']
+  store_cmp.skip_link = options['--skip-link']
   store_cmp.load_config(store_cmp.config_path)
 
   while True:

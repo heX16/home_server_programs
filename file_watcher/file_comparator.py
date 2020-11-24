@@ -22,6 +22,7 @@ class FileStoreComparator:
   def __init__(self, store_file: str, targetdir = '.\\'):
     self.store_file = store_file
     self.encoding='utf-8'
+    #todo: normalize path. Example: targetdir='/etc', targetdir='etc', targetdir='/etc/'
     self.targetdir  = targetdir # watching directory
     self.searchmask = '*'
     self.file_extension = '*'
