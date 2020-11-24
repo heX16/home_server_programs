@@ -4,6 +4,7 @@
 '''
 Программа которая обнаруживает изменения в дирикториях и/или файлах.
 И если произошло изменение то запускает программу.
+Настраивается только на одну дирикторию "--dir" и следит за дирикториями и файлами в ней.
 
 Конфигурация:
 commands: # список команд.
@@ -55,6 +56,7 @@ class FileStoreComparator2(FileStoreComparator):
 
   def __init__(self, store_file: str, targetdir = '.\\'):
     super().__init__(store_file, targetdir)
+    self.config_path = '' # path to config for reload on change
     self.ignore_list = [] # NOTE: скрывает указанный файл в каждой дире!!! - это поведение надобы пофиксить но нет времени...
     self.run_commands = []
 
@@ -67,6 +69,10 @@ class FileStoreComparator2(FileStoreComparator):
 
   def detect_watch_event(self, path):
     path_str = "/".join(path)
+    # reload config file
+    if path_str == self.config_path:
+      self.load_config(self.config_path)
+      return
     # find in files
     if path_str in self.config['files']:
       self.activate_cmd(self.config['files'][path_str])
@@ -101,6 +107,12 @@ class FileStoreComparator2(FileStoreComparator):
     # Read YAML file
     with open(filename, 'r', encoding='utf8') as stream:
         self.config = yaml.load(stream)
+        if self.config['files'] == None:
+            print('WARN: "files:" section is empty')
+            self.config['files'] = {}
+        if self.config['dirs'] == None:
+            print('WARN: "dirs:" section is empty')
+            self.config['dirs'] = {}
     self.run_commands = dict.fromkeys(self.config['commands'].keys(), False)
 
   def compare(self):
@@ -132,7 +144,8 @@ def main():
   store_cmp = FileStoreComparator2(options['--store'], options['--dir'])
   store_cmp.file_extension = options['--ext']
   store_cmp.ignore_list.append(Path(options['--store']).name)
-  store_cmp.load_config(options['--config'])
+  store_cmp.config_path = options['--config']
+  store_cmp.load_config(store_cmp.config_path)
 
   while True:
     store_cmp.compare()

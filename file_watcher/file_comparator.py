@@ -22,7 +22,7 @@ class FileStoreComparator:
   def __init__(self, store_file: str, targetdir = '.\\'):
     self.store_file = store_file
     self.encoding='utf-8'
-    self.targetdir  = targetdir
+    self.targetdir  = targetdir # watching directory
     self.searchmask = '*'
     self.file_extension = '*'
     self.on_added = None
