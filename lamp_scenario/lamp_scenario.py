@@ -14,7 +14,6 @@ Options:
 """
 
 def loadConfig(filename):
-    #todo: print->log
     #todo: move to function result
     global receivers_objects
     global topic_mqtt_read
@@ -40,15 +39,16 @@ def loadConfig(filename):
     trigger_value = None
 
     for index, row in enumerate(list(data)):
-        print(row)
+        logger.debug('CONFIG LINE {0}: {1}'.format(index, row))
+
         if not row[index_mqtt_switch_read] and not row[index_mqtt_write]:
             # Если есть данные для mqtt_write, но их некуда записывать
-            print('Пропускаем строку {0}'.format(index))
+            logger.warn('Пропускаем строку {0}'.format(index))
             continue
 
         if not row[index_mqtt_switch_read] and not row[index_mqtt_write]:
             # Пустая строка
-            print('Пропускаем строку {0}'.format(index))
+            logger.warn('Пропускаем строку {0}'.format(index))
             continue
 
         if row[index_type]:
@@ -85,11 +85,11 @@ def loadConfig(filename):
         receivers_objects.append(rec_obj)
 
     for receiver in receivers_objects:
-        print(receiver)
+        logger.debug(receiver)
         for trigger in receiver.senders.items():
-            print('    <trigger>({0})'.format(trigger[0]))
+            logger.debug('    <trigger>({0})'.format(trigger[0]))
             for sender in trigger[1]:
-                print('       <Sender>(path={0})'.format(sender))
+                logger.debug('       <Sender>(path={0})'.format(sender))
 
 
 async def main():
@@ -126,9 +126,7 @@ async def main():
 
     c.on_message = on_message
 
-    #debug: c.on_log = lambda x,y,z,d: print(d)
-
-    print(mqtt_read_paths)
+    logger.debug(str(mqtt_read_paths))
 
     for topic_mqtt_read in mqtt_read_paths:
         logger.warning('{0} Подписался'.format(topic_mqtt_read))
