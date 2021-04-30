@@ -38,8 +38,8 @@ def loadConfig(filename):
     rec = None
     trigger_value = None
 
-    for index, row in enumerate(list(data)):
-        logger.debug('CONFIG LINE {0}: {1}'.format(index, row))
+    for index, row in enumerate(data):
+        logger.debug('CONFIG LINE {0}: {1}. CellsInRow={2}'.format(index, row, len(row)))
 
         if not row[index_mqtt_switch_read] and not row[index_mqtt_write]:
             # Если есть данные для mqtt_write, но их некуда записывать
@@ -63,7 +63,8 @@ def loadConfig(filename):
             else:
                 assert not rec[0]['senders'].get(trigger_value), 'receiver с таким путем и триггерным значением уже существует'
                 rec[0]['senders'][trigger_value] = []
-        if row[1]:
+
+        if row[index_mqtt_write]:
 
             path_to_receive = row[index_mqtt_read] if row[index_mqtt_read] else None
             if path_to_receive:
