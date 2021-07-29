@@ -39,6 +39,9 @@ import shutil # chown
 import os # chmod, islink
 import time
 
+from watchdog.observers import Observer # pip3 install watchdog
+from watchdog.events import FileSystemEventHandler
+
 def shell(command: str):
   try:
     c = None
@@ -142,6 +145,25 @@ class FileStoreComparator2(FileStoreComparator):
       self.run_commands[k] = False
 
 
+
+class FlagEventHandler(FileSystemEventHandler):
+    def __init__(self, logger=None):
+        self.changed = False
+        super().__init__()
+
+    def on_moved(self, event):
+        self.changed = True
+
+    def on_created(self, event):
+        self.changed = True
+
+    def on_deleted(self, event):
+        self.changed = True
+
+    def on_modified(self, event):
+        self.changed = True
+
+
 def main():
   # параметры
   options = docopt(usage)
@@ -158,12 +180,26 @@ def main():
   store_cmp.skip_link = options['--skip-link']
   store_cmp.load_config(store_cmp.config_path)
 
-  while True:
+  if options['--daemon'] != True:
+    # one run:
     store_cmp.compare()
-    if options['--daemon'] != True:
-      break
-    #TODO: вот это sleep нужно заменить на пробуждение по функции swatchdog
-    time.sleep(int(options['--scantime']))
+  else:
+    # background process:
+    event_handler = FlagEventHandler()
+    observer = Observer()
+    observer.schedule(event_handler, store_cmp.targetdir, recursive=True)
+    observer.start()
+    try:
+      #TODO: correct exit on SIG and etc...
+      while True:
+        time.sleep(int(options['--scantime']))
+        if event_handler.changed:
+            event_handler.changed = False
+            store_cmp.compare()
+    finally:
+      if options['--daemon'] == True:
+        observer.stop()
+        observer.join()
 
 if __name__ == "__main__":
   main()
