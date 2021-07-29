@@ -162,6 +162,7 @@ def main():
     store_cmp.compare()
     if options['--daemon'] != True:
       break
+    #TODO: вот это sleep нужно заменить на пробуждение по функции swatchdog
     time.sleep(int(options['--scantime']))
 
 if __name__ == "__main__":
