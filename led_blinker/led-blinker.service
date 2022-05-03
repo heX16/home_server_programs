@@ -1,0 +1,15 @@
+[Unit]
+Description=Just blink LED on GPIO
+
+[Service]
+Type=simple
+#Type=forking
+#User=%i
+ExecStart=/usr/bin/python3 /srv/programs/led_blinker/led_blinker.py
+#KillSignal=SIGTERM - но на половине кривых скриптов это не заработает (нужна поддержка сигнала)
+#KillSignal=SIGKILL - вот верный вариант
+#Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+
