@@ -85,17 +85,21 @@ class FileEventsCrond:
   def file_added(self, file_name):
     print('Added:', file_name)
     sh("cp {1}{0} /etc/cron.d/", file_name, self.dir)
+    sh("sudo systemctl reload-or-restart cron.service")
 
   def file_removed(self, file_name):
     print('Removed:', file_name)
     sh("rm /etc/cron.d/{0}", file_name)
+    sh("sudo systemctl reload-or-restart cron.service")
 
   def file_changed(self, file_name):
     print('Changed:', file_name)
     sh("cp {1}{0} /etc/cron.d/", file_name, self.dir)
+    sh("sudo systemctl reload-or-restart cron.service")
 
   def file_changed_store_error(self, file_name):
     print('Store error:', file_name)
+    sh("sudo systemctl reload-or-restart cron.service")
 
 
 
