@@ -1,7 +1,8 @@
 #!/bin/sh
 
-/etc/init.d/openhab2 stop
+service openhab stop
 apt update
-apt install --only-upgrade openhab2
+apt install --only-upgrade openhab
 ./set_access
-/etc/init.d/openhab2 start
+service openhab start
+

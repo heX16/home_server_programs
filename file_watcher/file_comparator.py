@@ -9,6 +9,8 @@ from pprint import *
 """
 TODO:
 
+сделать поддержку https://pypi.org/project/igittigitt/
+
 сделать особую версию - тройной компаратор.
 сравнивает с БД сразу 2 директории.
 при этом поведении следующее:
@@ -92,6 +94,7 @@ class FileStoreComparator:
     return r
 
   def event_filter(self, path, isdir):
+    # see also: https://pypi.org/project/igittigitt/
     if callable(self.on_filter):
       return self.on_filter(path, isdir)
     else:
