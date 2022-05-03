@@ -49,3 +49,13 @@ dirs:
   'path_to_dir': cmd2
 ```
 
+
+
+TODO
+========
+
+добавить поддержку:
+https://pypi.org/project/igittigitt/
+A spec-compliant gitignore parser for Python
+
+
