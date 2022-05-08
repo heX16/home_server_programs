@@ -1,11 +1,12 @@
-﻿# ver 2
-# 2022.05.03
+﻿version = 2.2
+# 2022.05.09
 
-import yaml
+import yaml # pip3 install pyyaml
 import datetime
 import glob
 import os
 from pprint import *
+
 
 """
 
@@ -151,11 +152,13 @@ class FileStoreComparator:
     '''
 
     # enum 'store' and find in 'files'
+    # f - file name
+    # v - file data in store
     for f,v in store.copy().items():
       datech = files.get(f, None)
 
       # compare dir
-      if self.recursion and isinstance(datech,dict) and isinstance(v,dict):
+      if self.recursion and isinstance(datech, dict) and isinstance(v, dict):
         self.compare_list(v, datech, path+[f]) # <- RECURSION
         # remove from 'files' list - nedded for next comparsion step.
         del files[f]
@@ -168,14 +171,17 @@ class FileStoreComparator:
         self.event_file_removed(path+[f])
       # if isinstance... type(datech)!=type(v) ... - file_to_dir, dir_to_file....
       else:
-        #todo: WIP!
-        if isinstance(datech,dict):
+        #todo: WIP! (WTF??? - я забыл что это)
+        if isinstance(datech, dict):
           continue
 
         # present in 'store' and 'files'.
         # remove from 'files' list - nedded for next comparsion step.
         del files[f]
         # analize time.
+        # DEBUG:
+        #print('data in disk ', datech)
+        #print('data in store', v)
         if datech > v:
           # present in 'store' and 'files' by datetime changed
           store[f]=datech
@@ -185,6 +191,8 @@ class FileStoreComparator:
             # present in 'store' and 'files' by datetime changed, but not correct
             store[f]=datech
             self.event_file_changed_store_error(path+[f])
+    # end _for_ in store
+
     # enum lefted 'files' - added files.
     for k,v in files.items():
       store.update({k:v})
@@ -193,10 +201,12 @@ class FileStoreComparator:
   def load_store(self):
     try:
       with open(self.store_file, 'r', encoding=self.encoding) as f:
-        store = yaml.load(f)
+        store = yaml.safe_load(f)
         if store==None:
           store = {}
-    except:
+    except IOError as e:
+      # TODO: except - нужна более обширная обработка.
+      print("I/O error({0}): {1}".format(e.errno, e.strerror))
       store = {}
     return store
 

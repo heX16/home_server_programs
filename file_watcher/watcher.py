@@ -119,7 +119,7 @@ class FileStoreComparator2(FileStoreComparator):
   def load_config(self, filename: str):
     # Read YAML file
     with open(filename, 'r', encoding='utf8') as stream:
-        self.config = yaml.load(stream)
+        self.config = yaml.safe_load(stream)
         if self.config['files'] == None:
             print('WARN: "files:" section is empty')
             self.config['files'] = {}

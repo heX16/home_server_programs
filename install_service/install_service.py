@@ -1,6 +1,8 @@
 ﻿#!/usr/bin/env python3
 # coding: utf-8
 
+version = 1.1
+
 '''
 Алгоритм:
 Загрузить "списке своих сервисов", хранится в отдельном файле, тамже хранятся даты модификации файлов сервисов.
@@ -45,7 +47,7 @@ Options:
 '''
 
 from docopt import docopt # pip3 install docopt
-from file_comparator import *
+import file_comparator
 from pprint import *
 from subprocess import *
 from pathlib import Path
@@ -68,8 +70,9 @@ def sh(command: str, *params):
 class FileEventsSystemd:
 
   def file_filter(self, path, isdir):
+    # TODO: add support suffix: ".service", ".socket", ".device", ".mount", ".automount", ".swap", ".target", ".path", ".timer", ".slice", or ".scope".
     file_name = "/".join(path)
-    pprint(file_name)
+    #print(file_name)
     return True
 
   def file_added(self, path):
@@ -138,11 +141,14 @@ def main():
   # параметры
   options = docopt(usage)
 
+  print('Install systemd. Ver:', version)
+  print('lib: file_comparator. Ver:', file_comparator.version)
+
   if options['--store_sysd'] is not None and options['--dir_sysd'] is not None:
     print('Begin systemd.')
     event = FileEventsSystemd()
     event.dir = options['--dir_sysd']
-    store_cmp = FileStoreComparator(options['--store_sysd'], options['--dir_sysd'])
+    store_cmp = file_comparator.FileStoreComparator(options['--store_sysd'], options['--dir_sysd'])
     store_cmp.on_added   = event.file_added
     store_cmp.on_removed = event.file_removed
     store_cmp.on_changed = event.file_changed
@@ -154,7 +160,7 @@ def main():
     print('Begin crond.')
     event = FileEventsCrond()
     event.dir = options['--dir_cron']
-    store_cmp = FileStoreComparator(options['--store_cron'], options['--dir_cron'])
+    store_cmp = file_comparator.FileStoreComparator(options['--store_cron'], options['--dir_cron'])
     store_cmp.on_added   = event.file_added
     store_cmp.on_removed = event.file_removed
     store_cmp.on_changed = event.file_changed

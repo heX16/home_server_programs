@@ -258,7 +258,7 @@ def dict_to_object(config_dict: dict, obj):
 def load_config(filename: str):
     # Read YAML file
     with open(filename, 'r', encoding='utf8') as stream:
-        data = yaml.load(stream)
+        data = yaml.safe_load(stream)
 
     if 'default' in data:
         cfg_def = data['default']
