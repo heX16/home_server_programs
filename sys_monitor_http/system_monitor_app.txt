@@ -1,0 +1,11 @@
+import React from 'react';
+import ReactDOM from 'react-dom';
+import SystemMonitor from './SystemMonitor';
+
+const App = () => (
+  <div>
+    <SystemMonitor />
+  </div>
+);
+
+ReactDOM.render(<App />, document.getElementById('root'));
