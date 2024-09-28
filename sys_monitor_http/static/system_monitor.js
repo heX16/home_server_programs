@@ -42,7 +42,8 @@ function initCharts() {
 
 function updateCharts(cpuUsage, memoryUsed, memoryAvailable) {
     const timestamp = new Date().toLocaleTimeString();
-    
+
+    // Update CPU chart
     cpuChart.data.labels.push(timestamp);
     cpuChart.data.datasets[0].data.push(cpuUsage);
     if (cpuChart.data.labels.length > 10) {
@@ -52,6 +53,12 @@ function updateCharts(cpuUsage, memoryUsed, memoryAvailable) {
     cpuChart.update();
 
     memoryChart.data.datasets[0].data = [memoryUsed, memoryAvailable];
+    // Fix memory data normalization
+    //const totalMemory = memoryUsed + memoryAvailable;
+    //memoryChart.data.datasets[0].data = [
+    //    (memoryUsed / totalMemory) * 100,
+    //    (memoryAvailable / totalMemory) * 100
+    //];
     memoryChart.update();
 }
 
@@ -82,8 +89,8 @@ function updateDiskInfo(diskData) {
 async function fetchData() {
     try {
         const [statusResponse, diskResponse] = await Promise.all([
-            fetch('/api/system_status'),
-            fetch('/api/disk')
+            fetch('api/system_status'),
+            fetch('api/disk')
         ]);
         const statusData = await statusResponse.json();
         const diskData = await diskResponse.json();
@@ -94,7 +101,7 @@ async function fetchData() {
             statusData.memory.available
         );
         updateDiskInfo(diskData);
-        
+
         document.getElementById('uptime').textContent = formatUptime(statusData.uptime.system);
     } catch (error) {
         console.error('Error fetching data:', error);
