@@ -9,6 +9,8 @@ sudo chown -R syncthing:share *
 sudo chmod -R g+w *
 find . -name "*.sh" -type f -exec chmod +rx "{}" \;
 find . -name "*.elf" -type f -exec chmod +rx "{}" \;
+find . -name "*.exec.??" -type f -exec chmod +rx "{}" \;
+find . -name "*.exec.???" -type f -exec chmod +rx "{}" \;
 
 cd /srv/config
 sudo chown -R syncthing:share *

@@ -80,6 +80,8 @@ function updateDiskInfo(diskData) {
     const diskInfoElement = document.getElementById('diskInfo');
     diskInfoElement.innerHTML = diskData.map(disk => `
         <h3>${disk.mountpoint}</h3>
+        <p>Device: ${disk.device}</p>
+        <p>Filesystem Type: ${disk.fstype}</p>
         <p>Total: ${formatBytes(disk.usage.total)}</p>
         <p>Used: ${formatBytes(disk.usage.used)} (${disk.usage.percent.toFixed(1)}%)</p>
         <progress value="${disk.usage.percent}" max="100"></progress>
