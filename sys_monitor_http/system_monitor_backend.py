@@ -17,7 +17,7 @@ async def read_index():
 def get_system_status():
     memory = psutil.virtual_memory()
     cpu_percent = psutil.cpu_percent(interval=1)
-    
+
     return {
         'cpu': {
             'usage': cpu_percent,
@@ -41,5 +41,10 @@ def get_disk_info():
         'device': partition.device,
         'mountpoint': partition.mountpoint,
         'fstype': partition.fstype,
+        # usage: {
+        #    total: 21378641920,
+        #    used: 4809781248,
+        #    free: 15482871808,
+        #    percent: 22.5 }
         'usage': psutil.disk_usage(partition.mountpoint)._asdict()
     } for partition in partitions]
