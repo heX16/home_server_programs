@@ -4,11 +4,54 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>System Monitor</title>
-    <!-- Добавьте здесь ссылки на CSS файлы, если необходимо -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .chart-container {
+            position: relative;
+            height: 200px;
+            width: 100%;
+        }
+        .info-card {
+            background-color: #f0f0f0;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+    </style>
 </head>
 <body>
-    <div id="root"></div>
-    <!-- Скрипты React будут добавлены сюда при сборке -->
-    <script src="/static/js/main.js"></script>
+    <h1>System Monitor</h1>
+    
+    <div class="info-card">
+        <h2>CPU Usage</h2>
+        <div class="chart-container">
+            <canvas id="cpuChart"></canvas>
+        </div>
+    </div>
+    
+    <div class="info-card">
+        <h2>Memory Usage</h2>
+        <div class="chart-container">
+            <canvas id="memoryChart"></canvas>
+        </div>
+    </div>
+    
+    <div class="info-card">
+        <h2>Disk Usage</h2>
+        <div id="diskInfo"></div>
+    </div>
+    
+    <div class="info-card">
+        <h2>System Uptime</h2>
+        <p id="uptime"></p>
+    </div>
+
+    <script src="/static/system_monitor.js"></script>
 </body>
 </html>

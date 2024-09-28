@@ -1,31 +1,19 @@
 import psutil
 import time
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pathlib import Path
 
 app = FastAPI()
 
-# Allow CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Serve static files
+app.mount("/static", StaticFiles(directory="."), name="static")
 
-service_start_time = time.time()
+@app.get("/")
+async def read_index():
+    return FileResponse("index.html")
 
-app.mount('/static', StaticFiles(directory='static'), name='static')
-
-@app.get('/')
-def get_index():
-    index_path = Path('static/index.html')
-    return index_path.read_text()
-
-@app.get('/api/system_status')
+@app.get("/api/system_status")
 def get_system_status():
     memory = psutil.virtual_memory()
     cpu_percent = psutil.cpu_percent(interval=1)
@@ -42,12 +30,11 @@ def get_system_status():
             'percent': memory.percent
         },
         'uptime': {
-            'service': time.time() - service_start_time,
             'system': time.time() - psutil.boot_time()
         }
     }
 
-@app.get('/api/disk')
+@app.get("/api/disk")
 def get_disk_info():
     partitions = psutil.disk_partitions()
     return [{
