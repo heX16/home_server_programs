@@ -1,0 +1,5 @@
+/home/syncthing/*
+/home/nextcloud/*
+/home/share/*
+
+
