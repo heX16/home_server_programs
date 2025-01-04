@@ -12,6 +12,17 @@ version = 1.1
 3. Если в "локальной папке" "файл сервис" обновился - дать команду остановки, скопировать файл в "системную папку", дать команду {обновления, перезапуска}.
 
 TODO:
+    Добавить поддержку /etc/systemd/network/*.network файлов.
+
+TODO:
+    При изменении файлов (file_changed) делать копирование, "daemon-reload", и "reload-or-restart".
+    Сейчас происходит stop/start - это неправильно.
+
+TODO:
+    файл список служб. в котором пишутся данные о состоянии служб после прогона файла.
+    в нем также можно включить службу или отключить.
+
+TODO:
     rename: install_service.py -> systemd_sync_manager.py
 
 TODO:
@@ -24,7 +35,7 @@ TODO:
     Это нужно для ситуации когда скрипт запускается на полностью новой системе.
 
 TODO:
-    The type suffix must be one of ".service", ".socket", ".device", ".mount", ".automount", ".swap", ".target", ".path", ".timer", ".slice", or ".scope".
+    The type suffix must be one of ".service", ".socket", ".device", ".mount", ".automount", ".swap", ".target", ".path", ".timer", ".slice", or ".scope". And "../network/*.network"
 
 
 

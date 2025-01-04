@@ -1,0 +1,6 @@
+#   include ignore_list.txt
+.git
+__pycache__
+.idea
+venv
+
