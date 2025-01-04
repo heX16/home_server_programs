@@ -1,0 +1,62 @@
+﻿1:!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+реле SW_1 включен. запускаю прогу - она выключает и затем сразу снова включает реле.
+если очистить ретайн в mqtt то этой вздрочки нету.
+но потом она _вроде_ возникает снова - хотя вроде в ретайн ничего нету.
+
+DEBUG:root:csMqttEvents.create ok
+INFO:root:Cfg name:SW_2
+INFO:root:Cfg name:SW_1
+DEBUG:root:write to relay: False mqtt_path=extbus/11/7/w
+DEBUG:root:state: States.init
+DEBUG:root:write to relay: False mqtt_path=extbus/41/15/w
+DEBUG:root:state: States.init
+DEBUG:root:state: States.disable
+DEBUG:root:state: States.disable
+DEBUG:root:csMqttEvents.connect_event
+DEBUG:root:ReConnect: SW_2
+DEBUG:root:csMqttEvents.connect_event
+DEBUG:root:ReConnect: SW_1
+DEBUG:root:event_relay d=False name=SW_2
+DEBUG:root:event_relay d=True name=SW_1
+DEBUG:root:state: States.enable_by_dist
+DEBUG:root:write to relay: True mqtt_path=extbus/41/15/w
+DEBUG:root:event_relay d=False name=SW_2
+DEBUG:root:event_relay d=True name=SW_1
+
+
+OK&&& 2:!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+выключаю реле с кнопки.
+он видит что выключено с кнопки, но судя по логу всеравно сука пишет в mqtt. "write to relay"
+
+DEBUG:root:state: States.enable_by_switch
+DEBUG:root:write to relay: True mqtt_path=extbus/41/15/w
+DEBUG:root:event_relay d=True name=SW_1
+DEBUG:root:event_relay d=True name=SW_1
+DEBUG:root:event_mot_det d=True name=SW_1
+DEBUG:root:mot_det: 0->1 True name=SW_1
+DEBUG:root:event_mot_det d=False name=SW_1
+
+3:!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+сам по себе дрочит реле.
+при условии что оно включено вручную.
+дрочит рандомно, или через 10 секунд или вообще никогда.
+дрочит быстро - прощелкивает прям за секунду.
+
+DEBUG:root:state: States.enable_by_switch
+DEBUG:root:write to relay: True mqtt_path=extbus/41/15/w
+DEBUG:root:event_relay d=False name=SW_2
+DEBUG:root:event_relay d=False name=SW_1
+DEBUG:root:state: States.disable_lock_motdet
+DEBUG:root:write to relay: False mqtt_path=extbus/41/15/w
+DEBUG:root:event_relay d=True name=SW_1
+DEBUG:root:state: States.enable_by_switch
+DEBUG:root:write to relay: True mqtt_path=extbus/41/15/w
+DEBUG:root:event_relay d=False name=SW_1
+DEBUG:root:state: States.disable_lock_motdet
+DEBUG:root:write to relay: False mqtt_path=extbus/41/15/w
+DEBUG:root:event_relay d=True name=SW_1
+DEBUG:root:state: States.enable_by_switch
+DEBUG:root:write to relay: True mqtt_path=extbus/41/15/w
+
+
