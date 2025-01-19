@@ -1,9 +1,19 @@
 #!/usr/bin/env python3
 # coding: utf-8
 
-version = 1.2
+version = 2.0
 
+usage = '''
+Usage: install_service.py [--dir=PATH] [--store=FILE]
+
+Options:
+  --dir=PATH    path to directory from copy service file
+  --store=FILE  name of YAML file where stored files info [default: service_list.yaml]
 '''
+
+
+
+todo_list = '''
 Алгоритм:
 Загрузить "списке своих сервисов", хранится в отдельном файле, тамже хранятся даты модификации файлов сервисов.
 Загрузить список сервисов из _локальной_ папки "service".
@@ -44,15 +54,6 @@ NOTE:
 Для решения этой задачи можно было использовать "ansible", но мне хотелось чего-то простого, маленького, на основе синхронизации через syncthing, и без центрального управляющего хоста.
 В ansible пришлось бы делать комбинацию из модулей: copy, systemd, (и наверное shell).
 https://docs.ansible.com/ansible/latest/collections/ansible/builtin/
-'''
-
-
-usage = '''
-Usage: install_service.py [--dir_sysd=PATH] [--store_sysd=FILE]
-
-Options:
-  --dir_sysd=PATH    path to directory from copy service file
-  --store_sysd=FILE  name of YAML file where stored files info [default: service_list.yaml]
 '''
 
 from docopt import docopt  # pip3 install docopt
@@ -245,7 +246,7 @@ def main():
   # параметры
   options = docopt(usage)
 
-  print('Install systemd. Ver:', version)  # version не определён в исходном коде
+  print('Install systemd. Ver:', version)
   print('lib: file_comparator. Ver:', file_comparator.version)
 
   if options['--store_sysd'] is not None and options['--dir_sysd'] is not None:
