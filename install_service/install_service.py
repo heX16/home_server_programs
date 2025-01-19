@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 # coding: utf-8
 
-from pathlib import Path
-
 version = 1.2
 
 '''
@@ -49,18 +47,15 @@ https://docs.ansible.com/ansible/latest/collections/ansible/builtin/
 '''
 
 
-
 usage = '''
-Usage: install_service.py [--dir_sysd=PATH] [--store_sysd=FILE] [--dir_cron=PATH] [--store_cron=FILE]
+Usage: install_service.py [--dir_sysd=PATH] [--store_sysd=FILE]
 
 Options:
   --dir_sysd=PATH    path to directory from copy service file
   --store_sysd=FILE  name of YAML file where stored files info [default: service_list.yaml]
-  --dir_cron=PATH    path to directory from copy crond file
-  --store_cron=FILE  name of YAML file where stored files info [default: cron_list.yaml]
 '''
 
-from docopt import docopt # pip3 install docopt
+from docopt import docopt  # pip3 install docopt
 import file_comparator
 from pprint import *
 from subprocess import *
@@ -72,14 +67,14 @@ def sh(command: str, *params):
     command = command.format(*params)
     print('Run:', command)
     c = run(command, shell=True)
-    if c!=None and c.stdout!='' and c.returncode!=0:
+    if c != None and c.stdout != '' and c.returncode != 0:
       print(c.stdout)
   except FileNotFoundError as e:
-    print("Error: FileNotFound. Command: \"" + command + "\"")
+    print('Error: FileNotFound. Command: "' + command + '"')
   except Exception as e:
-    print("Error: " + type(e) + ". Command: \"" + command + "\"")
-    if c!=None and c.stderr!='':
-      print("Output:")
+    print('Error: ' + str(type(e)) + '. Command: "' + command + '"')
+    if c != None and c.stderr != '':
+      print('Output:')
       print(c.stderr)
 
 
@@ -184,108 +179,73 @@ def systemd_file_supports_start(file_type: str) -> bool:
     return file_type in start_supported
 
 
-
 class FileEventsSystemd:
-
-
   def file_filter(self, path, isdir) -> bool:
     # TODO: add support suffix: ".service", ".socket", ".device", ".mount", ".automount", ".swap", ".target", ".path", ".timer", ".slice", or ".scope".
-    file_name = "/".join(path)
+    file_name = '/'.join(path)
     #print(file_name)
     return True
 
-
   def file_added(self, path):
-    file_name = Path("/".join(path))
+    file_name = Path('/'.join(path))
     unit_type = systemd_file_type(file_name)
     print('Added:', file_name)
 
     timer_file = service_has_timer(file_name)
 
-    sh("cp {0}{1} /etc/systemd/system/", self.dir, str(file_name))
+    sh('cp {0}{1} /etc/systemd/system/', self.dir, str(file_name))
 
     if timer_file == False:
       if systemd_file_supports_enable(unit_type):
-        sh("sudo systemctl --quiet enable {0}", str(file_name))
+        sh('sudo systemctl --quiet enable {0}', str(file_name))
       if systemd_file_supports_start(unit_type):
-        sh("sudo systemctl start {0}", str(file_name))
+        sh('sudo systemctl start {0}', str(file_name))
     else:
-      sh("sudo systemctl start {0}", str(f_timer))
-
+      sh('sudo systemctl start {0}', str(timer_file))
 
   def file_removed(self, path):
-    file_name = "/".join(path)
-    unit_type = systemd_file_type(file_name)
+    file_name = '/'.join(path)
+    unit_type = systemd_file_type(Path(file_name))
     print('Removed:', file_name)
 
     if systemd_file_supports_start(unit_type):
-      sh("sudo systemctl stop {0}", file_name)
+      sh('sudo systemctl stop {0}', file_name)
     if systemd_file_supports_enable(unit_type):
-      sh("sudo systemctl --quiet disable {0}", file_name)
-    sh("rm /etc/systemd/system/{0}", file_name)
-    sh("sudo systemctl daemon-reload")
-    sh("sudo systemctl reset-failed")
-
+      sh('sudo systemctl --quiet disable {0}', file_name)
+    sh('rm /etc/systemd/system/{0}', file_name)
+    sh('sudo systemctl daemon-reload')
+    sh('sudo systemctl reset-failed')
 
   def file_changed(self, path):
-    file_name = "/".join(path)
-    unit_type = systemd_file_type(file_name)
+    file_name = '/'.join(path)
+    unit_type = systemd_file_type(Path(file_name))
     print('Changed:', file_name)
 
-    timer_file = service_has_timer(file_name)
+    timer_file = service_has_timer(Path(file_name))
 
     if systemd_file_supports_start(unit_type):
-      sh("sudo systemctl stop {0}", file_name)
-    sh("cp {1}{0} /etc/systemd/system/", file_name, self.dir)
-    sh("sudo systemctl daemon-reload")
+      sh('sudo systemctl stop {0}', file_name)
+    sh('cp {1}{0} /etc/systemd/system/', file_name, self.dir)
+    sh('sudo systemctl daemon-reload')
 
     if timer_file == False:
       if systemd_file_supports_enable(unit_type):
-        sh("sudo systemctl --quiet enable {0}", str(file_name))
+        sh('sudo systemctl --quiet enable {0}', str(file_name))
       if systemd_file_supports_start(unit_type):
-        sh("sudo systemctl start {0}", str(file_name))
+        sh('sudo systemctl start {0}', str(file_name))
     else:
-      sh("sudo systemctl start {0}", str(f_timer))
-
-
-  def file_changed_store_error(self, path):
-    file_name = "/".join(path)
-    print('Store error:', file_name)
-
-
-
-class FileEventsCrond:
-
-  def file_added(self, path):
-    file_name = "/".join(path)
-    print('Added:', file_name)
-    sh("cp {1}{0} /etc/cron.d/", file_name, self.dir)
-    sh("sudo systemctl reload-or-restart cron.service")
-
-  def file_removed(self, path):
-    file_name = "/".join(path)
-    print('Removed:', file_name)
-    sh("rm /etc/cron.d/{0}", file_name)
-    sh("sudo systemctl reload-or-restart cron.service")
-
-  def file_changed(self, path):
-    file_name = "/".join(path)
-    print('Changed:', file_name)
-    sh("cp {1}{0} /etc/cron.d/", file_name, self.dir)
-    sh("sudo systemctl reload-or-restart cron.service")
+      sh('sudo systemctl start {0}', str(timer_file))
 
   def file_changed_store_error(self, path):
-    file_name = "/".join(path)
+    file_name = '/'.join(path)
     print('Store error:', file_name)
-    sh("sudo systemctl reload-or-restart cron.service")
-
 
 
 def main():
   # параметры
   options = docopt(usage)
 
-  print('Install systemd. Ver:', version)
+  print('Install systemd. Ver:', version)  # version не определён в исходном коде
   print('lib: file_comparator. Ver:', file_comparator.version)
 
   if options['--store_sysd'] is not None and options['--dir_sysd'] is not None:
@@ -293,25 +253,15 @@ def main():
     event = FileEventsSystemd()
     event.dir = options['--dir_sysd']
     store_cmp = file_comparator.FileStoreComparator(options['--store_sysd'], options['--dir_sysd'])
-    store_cmp.on_added   = event.file_added
+    store_cmp.on_added = event.file_added
     store_cmp.on_removed = event.file_removed
     store_cmp.on_changed = event.file_changed
     store_cmp.on_changed_store_error = event.file_changed_store_error
     store_cmp.on_filter = event.file_filter
     store_cmp.compare()
 
-  if options['--store_cron'] is not None and options['--dir_cron'] is not None:
-    print('Begin crond.')
-    event = FileEventsCrond()
-    event.dir = options['--dir_cron']
-    store_cmp = file_comparator.FileStoreComparator(options['--store_cron'], options['--dir_cron'])
-    store_cmp.on_added   = event.file_added
-    store_cmp.on_removed = event.file_removed
-    store_cmp.on_changed = event.file_changed
-    store_cmp.on_changed_store_error = event.file_changed_store_error
-    store_cmp.compare()
-
   print('End.')
 
-if __name__ == "__main__":
+
+if __name__ == '__main__':
   main()
