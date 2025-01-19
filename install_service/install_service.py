@@ -13,47 +13,37 @@ Options:
 
 
 
-todo_list = '''
-Алгоритм:
-Загрузить "списке своих сервисов", хранится в отдельном файле, тамже хранятся даты модификации файлов сервисов.
-Загрузить список сервисов из _локальной_ папки "service".
-1. Если в "локальной папке" появился новый "файл сервиса" - скопировать файл в "системную папку", дать команду {обновления, включения, запуска}.
-2. Если в "локальной папке" исчез "файл сервиса" - дать команду {остановки, отключения}, удалить файл из "системной папки", дать команду обновления systemd.
-3. Если в "локальной папке" "файл сервис" обновился - дать команду остановки, скопировать файл в "системную папку", дать команду {обновления, перезапуска}.
+some_notes = '''
+### Algorithm:
 
-TODO:
-    Добавить поддержку /etc/systemd/network/*.network файлов.
-    suport "network/*.network"
+1. Load the **"list of your services"**, stored in a separate file, where the
+   modification dates of the service files are also stored.
+2. Load the list of services from the **_local_ folder "service"**.
 
-TODO:
-    файл с состояним служб.
-    в котором пишутся данные о состоянии служб после обновления.
-    можно запросить свежие данные в ручную - выставить флаг в файле.
+#### Steps:
 
-TODO:
-    файл в котором можно включить службу или отключить.
+1. If there is a new **"service file"** in the **"local folder"**:
+   - Copy the file to the **"system folder"**.
+   - Give the command: `{update, enable, start}`.
+2. If the **"service file"** disappeared in the **"local folder"**:
+   - Give the command: `{stop, disable}`.
+   - Delete the file from the **"system folder"**.
+   - Give the `systemd update` command.
+3. If the **"service file"** is updated in the **"local folder"**:
+   - Give the `stop` command.
+   - Copy the file to the **"system folder"**.
+   - Give the command: `{update, restart}`.
 
-TODO:
-    rename: install_service.py -> systemd_service_manager.py
+---
 
-TODO:
-    Предусмотреть возможность проверки конфигов.
-    Проверка перед инсталяцией конфига.
-    если была ошибка то пишется в файл с состояним служб.
+### NOTE:
 
-TODO:
-    Предусмотреть проверку на отсутствие файлов в "системной папке", но при этом их наличия в "списке локальных сервисов" и в "локальной папке".
-    Если файлов нет в "системной папке" то сделать процедуры из пункта 1 (появился новый "файл сервиса").
-    Это нужно для ситуации когда скрипт запускается на полностью новой системе.
-
-TODO:
-    предусмотреть синхронизацию в другую сторону.
-
-
-NOTE:
-Для решения этой задачи можно было использовать "ansible", но мне хотелось чего-то простого, маленького, на основе синхронизации через syncthing, и без центрального управляющего хоста.
-В ansible пришлось бы делать комбинацию из модулей: copy, systemd, (и наверное shell).
-https://docs.ansible.com/ansible/latest/collections/ansible/builtin/
+I could have used **"ansible"** for this task, but I wanted something
+_simple_, _small_, based on synchronization via syncthing, and without a
+central controlling host.
+In **ansible**, I would have to make a combination of the modules: `copy`,
+`systemd` (and probably `shell`). But this solution is terrible!
+[Ansible Documentation](https://docs.ansible.com/ansible/latest/collections/ansible/builtin/)
 '''
 
 from docopt import docopt  # pip3 install docopt
