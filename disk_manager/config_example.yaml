@@ -1,0 +1,11 @@
+systemd_mount: 'media-data2tb.mount'
+services:
+  - 'service1'
+timeout: 60
+
+# classic mount unmount:
+# device: '/dev/disk/by-uuid/01D0E98275F6C030'
+# mount_point: '/media/data2tb'
+# services:
+#   - 'service1'
+# timeout: 60
