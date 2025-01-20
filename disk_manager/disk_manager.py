@@ -50,6 +50,7 @@ def run_command(command: List[str]) -> bool:
         run_command_stderr = str(e)
         return False
 
+
 def systemd_command(action: str, target: str, check_errcode: bool = True) -> bool:
     '''Runs a systemd command.'''
     success = run_command(['systemctl', action, target])
@@ -57,17 +58,20 @@ def systemd_command(action: str, target: str, check_errcode: bool = True) -> boo
         logger.error('Failed systemd %s for the service %s', action, target)
     return success
 
+
 def detect_automount_unit(mount_unit: str) -> Optional[str]:
     '''Detects .automount if present.'''
     automount_candidate = mount_unit.replace('.mount', '.automount')
     ok = systemd_command('status', automount_candidate, check_errcode=False)
     return automount_candidate if ok else None
 
+
 def start_services(services: list):
     '''Starts services.'''
     for service in services:
         logger.info('Starting service: %s', service)
         systemd_command('start', service)
+
 
 def stop_services(services: list, timeout: int) -> bool:
     '''Stops services.'''
@@ -89,6 +93,42 @@ def stop_services(services: list, timeout: int) -> bool:
             logger.error('Timeout while stopping %s', service)
             return False
     return True
+
+
+def systemd_get_properties(unit: str) -> dict:
+    '''Calls "systemctl show <unit>" and returns a dict of key=value from the output.'''
+    info_dict = {}
+    ok = systemd_command('show', unit, check_errcode=False)
+    if not ok:
+        logger.debug('systemctl show %s failed or returned non-zero code.', unit)
+        return info_dict
+
+    for line in run_command_stdout.splitlines():
+        if '=' in line:
+            key, val = line.split('=', 1)
+            info_dict[key] = val
+    return info_dict
+
+
+def systemd_unit_inactive(mount_unit: str) -> bool:
+    ''' Checks if the SystemD mount unit is inactive '''
+    p = systemd_get_properties(mount_unit)
+    return p['ActiveState'] == 'inactive'
+
+
+def partition_is_mounted(systemd_mount_unit: str = '', device: str = '', mount_point: str = '') -> bool:
+    '''Checks if the partition is currently mounted via systemd or classic methods.'''
+    if systemd_mount_unit:
+        if systemd_unit_inactive(systemd_mount_unit):
+            return False
+        return True
+    elif device and mount_point:
+        ok = run_command(['mountpoint', '-q', mount_point])
+        return ok
+    else:
+        logger.error('No systemd_mount or device/mount_point provided to check if partition is mounted.')
+        return False
+
 
 def mount_partition(systemd_mount_unit: str = '', device: str = '', mount_point: str = '') -> bool:
     '''Mounts a partition.'''
@@ -148,6 +188,7 @@ def unmount_partition(systemd_mount_unit: str = '', device: str = '', mount_poin
         logger.error('Invalid config: no systemd_mount or mount_point provided')
         return False
 
+
 def main(action: str, config_file: str) -> None:
     '''Main function.'''
     with open(config_file, 'r') as file:
@@ -158,6 +199,14 @@ def main(action: str, config_file: str) -> None:
     device = config.get('device', '')
     mount_point = config.get('mount_point', '')
     timeout = config.get('timeout', 30)
+
+    mounted = partition_is_mounted(systemd_mount_unit, device, mount_point)
+    if action == 'unmount' and not mounted:
+        logger.warning('Partition is not mounted, skipping unmount.')
+        sys.exit(0)
+    elif action == 'mount' and mounted:
+        logger.warning('Partition is already mounted, skipping mount.')
+        sys.exit(0)
 
     if not stop_services(services, timeout):
         logger.error('Stopping services failed. Exiting.')
@@ -177,6 +226,7 @@ def main(action: str, config_file: str) -> None:
             logger.info('Mount succeeded.')
 
     start_services(services)
+
 
 if __name__ == '__main__':
     arguments = docopt(__doc__)
