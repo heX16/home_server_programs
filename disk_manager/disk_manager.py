@@ -94,9 +94,10 @@ def mount_partition(systemd_mount_unit: str = '', device: str = '', mount_point:
     '''Mounts a partition.'''
     if systemd_mount_unit:
         logger.info('Mounting with SystemD: %s', systemd_mount_unit)
-        if detect_automount_unit(systemd_mount_unit):
+        am = detect_automount_unit(systemd_mount_unit)
+        if am:
             logger.info('Starting automount: %s', am)
-            systemd_command('start', am, check_errcode=False)
+            systemd_command('start', am)
 
         success = systemd_command('start', systemd_mount_unit)
         if not success:
@@ -118,9 +119,10 @@ def unmount_partition(systemd_mount_unit: str = '', device: str = '', mount_poin
     '''Unmounts a partition.'''
     if systemd_mount_unit:
         logger.info('Unmounting with SystemD: %s', systemd_mount_unit)
-        if detect_automount_unit(systemd_mount_unit):
+        am = detect_automount_unit(systemd_mount_unit)
+        if am:
             logger.info('Stopping automount: %s', am)
-            systemd_command('stop', am, check_errcode=False)
+            systemd_command('stop', am)
 
         success = systemd_command('stop', systemd_mount_unit)
         if not success:
