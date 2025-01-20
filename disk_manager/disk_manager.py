@@ -16,10 +16,9 @@ import yaml
 from docopt import docopt
 import sys
 import logging
-from typing import List
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
-
 
 run_command_stdout = ''
 run_command_stderr = ''
@@ -39,10 +38,10 @@ def run_command(command: List[str]) -> bool:
         run_command_stderr = result.stderr.strip()
         run_command_returncode = result.returncode
 
+        if run_command_stdout:
+            logger.debug('#### Command stdout:\n%s', run_command_stdout)
         if run_command_stderr:
-            logger.debug('#### Command stdout:\n%s\n', run_command_stdout)
-        if run_command_stderr:
-            logger.debug('#### Command stderr:\n%s\n', run_command_stderr)
+            logger.debug('#### Command stderr:\n%s', run_command_stderr)
         logger.debug('#### Command return code: %s', run_command_returncode)
 
         return (result.returncode == 0)
@@ -51,21 +50,24 @@ def run_command(command: List[str]) -> bool:
         run_command_stderr = str(e)
         return False
 
-
-def systemd_command(action: str, target: str, check_errcode=True) -> bool:
+def systemd_command(action: str, target: str, check_errcode: bool = True) -> bool:
     '''Runs a systemd command.'''
     success = run_command(['systemctl', action, target])
     if check_errcode and not success:
-        logger.error('Failed systemd %s service %s', action, target)
+        logger.error('Failed systemd %s for the service %s', action, target)
     return success
 
+def detect_automount_unit(mount_unit: str) -> Optional[str]:
+    '''Detects .automount if present.'''
+    automount_candidate = mount_unit.replace('.mount', '.automount')
+    ok = systemd_command('status', automount_candidate, check_errcode=False)
+    return automount_candidate if ok else None
 
 def start_services(services: list):
     '''Starts services.'''
     for service in services:
         logger.info('Starting service: %s', service)
         systemd_command('start', service)
-
 
 def stop_services(services: list, timeout: int) -> bool:
     '''Stops services.'''
@@ -75,7 +77,7 @@ def stop_services(services: list, timeout: int) -> bool:
             logger.error('Cannot stop service %s', service)
             return False
 
-        wait_time: int = 0
+        wait_time = 0
         while wait_time < timeout:
             systemd_command('is-active', service, check_errcode=False)
             if 'inactive' in run_command_stdout:
@@ -88,46 +90,53 @@ def stop_services(services: list, timeout: int) -> bool:
             return False
     return True
 
-
 def mount_partition(systemd_mount_unit: str = '', device: str = '', mount_point: str = '') -> bool:
     '''Mounts a partition.'''
     if systemd_mount_unit:
         logger.info('Mounting with SystemD: %s', systemd_mount_unit)
+        if detect_automount_unit(systemd_mount_unit):
+            logger.info('Starting automount: %s', am)
+            systemd_command('start', am, check_errcode=False)
+
         success = systemd_command('start', systemd_mount_unit)
         if not success:
             logger.error('Failed to mount using SystemD: %s', systemd_mount_unit)
         return success
+
     elif device and mount_point:
         logger.info('Mounting partition %s to %s', device, mount_point)
         success = run_command(['mount', device, mount_point])
         if not success:
             logger.error('Failed to mount %s to %s. stderr: %s',
-                         device, mount_point, run_command_stderr.strip())
+                         device, mount_point, run_command_stderr)
         return success
     else:
         logger.error('Invalid config: no systemd_mount or device/mount_point provided')
         return False
 
-
 def unmount_partition(systemd_mount_unit: str = '', device: str = '', mount_point: str = '') -> bool:
     '''Unmounts a partition.'''
     if systemd_mount_unit:
         logger.info('Unmounting with SystemD: %s', systemd_mount_unit)
+        if detect_automount_unit(systemd_mount_unit):
+            logger.info('Stopping automount: %s', am)
+            systemd_command('stop', am, check_errcode=False)
+
         success = systemd_command('stop', systemd_mount_unit)
         if not success:
-            # Check status to see if it's busy or something else
-            systemd_command('status', systemd_mount_unit)
-            logs_lower = run_command_stdout.lower()
+            systemd_command('status', systemd_mount_unit, check_errcode=False)
+            logs_lower = (run_command_stdout + run_command_stderr).lower()
             if 'target is busy' in logs_lower or 'resource busy' in logs_lower:
                 logger.error('Cannot unmount %s, it is busy.', systemd_mount_unit)
             else:
                 logger.error('Failed to unmount using SystemD: %s', systemd_mount_unit)
         return success
+
     elif mount_point:
         logger.info('Unmounting partition: %s', mount_point)
         success = run_command(['umount', mount_point])
         if not success:
-            logs_lower = run_command_stdout.lower()
+            logs_lower = (run_command_stdout + run_command_stderr).lower()
             if 'target is busy' in logs_lower or 'resource busy' in logs_lower:
                 logger.error('Cannot unmount %s, it is busy.', mount_point)
             else:
@@ -137,17 +146,16 @@ def unmount_partition(systemd_mount_unit: str = '', device: str = '', mount_poin
         logger.error('Invalid config: no systemd_mount or mount_point provided')
         return False
 
-
 def main(action: str, config_file: str) -> None:
     '''Main function.'''
     with open(config_file, 'r') as file:
         config = yaml.safe_load(file)
 
-    services: list = config.get('services', [])
-    systemd_mount_unit: str = config.get('systemd_mount', '')
-    device: str = config.get('device', '')
-    mount_point: str = config.get('mount_point', '')
-    timeout: int = config.get('timeout', 30)
+    services = config.get('services', [])
+    systemd_mount_unit = config.get('systemd_mount', '')
+    device = config.get('device', '')
+    mount_point = config.get('mount_point', '')
+    timeout = config.get('timeout', 30)
 
     if not stop_services(services, timeout):
         logger.error('Stopping services failed. Exiting.')
@@ -167,7 +175,6 @@ def main(action: str, config_file: str) -> None:
             logger.info('Mount succeeded.')
 
     start_services(services)
-
 
 if __name__ == '__main__':
     arguments = docopt(__doc__)
