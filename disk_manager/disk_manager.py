@@ -1,188 +1,181 @@
-"""
+'''
 Disk Manager Script
 
 Usage:
-  disk_manager.py mount <config_file>
-  disk_manager.py unmount <config_file>
-
-Arguments:
-  mount       Mount the specified partition.
-  unmount     Unmount the specified partition.
-  config_file Path to the YAML configuration file.
+  disk_manager.py mount <config_file> [--verbose]
+  disk_manager.py unmount <config_file> [--verbose]
 
 Options:
   -h --help   Show this screen.
-"""
+  --verbose   Print more debug information.
+'''
 
 import subprocess
 import time
 import yaml
 from docopt import docopt
 import sys
+import logging
+from typing import List
+
+logger = logging.getLogger(__name__)
 
 
-def run_command(command):
-    """
-    Runs a shell command and returns its success status and output.
+run_command_stdout = ''
+run_command_stderr = ''
+run_command_returncode = 0
 
-    :param command: Command to execute as a list.
-    :return: Tuple (bool, str) indicating success status and output/error.
-    """
+def run_command(command: List[str]) -> bool:
+    '''Runs a shell command.'''
+    global run_command_stdout, run_command_stderr, run_command_returncode
+    run_command_stdout = ''
+    run_command_stderr = ''
+    run_command_returncode = 0
+
+    logger.debug('Running command: %s', ' '.join(command))
     try:
         result = subprocess.run(command, text=True, capture_output=True)
-        print(f'Command: {" ".join(command)}')
-        print(f'Stdout: {result.stdout.strip()}')
-        print(f'Stderr: {result.stderr.strip()}')
-        if result.returncode == 0:
-            return True, result.stdout.strip()
-        else:
-            return False, result.stdout.strip()
+        run_command_stdout = result.stdout.strip()
+        run_command_stderr = result.stderr.strip()
+        run_command_returncode = result.returncode
+
+        if run_command_stderr:
+            logger.debug('#### Command stdout:\n%s\n', run_command_stdout)
+        if run_command_stderr:
+            logger.debug('#### Command stderr:\n%s\n', run_command_stderr)
+        logger.debug('#### Command return code: %s', run_command_returncode)
+
+        return (result.returncode == 0)
     except Exception as e:
-        print(f'Error executing command: {" ".join(command)}\n{e}')
-        return False, str(e)
+        logger.exception('Error executing command: %s', ' '.join(command))
+        run_command_stderr = str(e)
+        return False
 
 
-def systemd_command(action, target):
-    """
-    Executes a systemd command with the specified action and target.
-
-    :param action: SystemD action (e.g., 'start', 'stop').
-    :param target: Target unit or service (e.g., 'service1', 'media-data2tb.mount').
-    :return: Tuple (bool, str) indicating success status and output/error.
-    """
-    print(f'Executing systemd {action} command on {target}')
-    return run_command(['systemctl', action, target])
+def systemd_command(action: str, target: str, check_errcode=True) -> bool:
+    '''Runs a systemd command.'''
+    success = run_command(['systemctl', action, target])
+    if check_errcode and not success:
+        logger.error('Failed systemd %s service %s', action, target)
+    return success
 
 
-def stop_services(services, timeout):
-    """
-    Stops the specified systemd services and waits until they are fully stopped.
-
-    :param services: List of services to stop.
-    :param timeout: Maximum time to wait for each service to stop, in seconds.
-    """
+def start_services(services: list):
+    '''Starts services.'''
     for service in services:
-        print(f'Stopping service: {service}')
-        success, output = systemd_command('stop', service)
-        if not success:
-            print(f'Failed to stop service {service}: {output}')
-            sys.exit(1)
+        logger.info('Starting service: %s', service)
+        systemd_command('start', service)
 
-        print(f'Waiting for {service} to stop (timeout: {timeout} seconds)...')
-        wait_time = 0
 
+def stop_services(services: list, timeout: int) -> bool:
+    '''Stops services.'''
+    for service in services:
+        logger.info('Stopping service: %s', service)
+        if not systemd_command('stop', service):
+            logger.error('Cannot stop service %s', service)
+            return False
+
+        wait_time: int = 0
         while wait_time < timeout:
-            success, status = systemd_command('is-active', service)
-            if status.strip() == 'inactive':
-                print(f'Service {service} stopped.')
+            systemd_command('is-active', service, check_errcode=False)
+            if 'inactive' in run_command_stdout:
+                logger.info('Service %s stopped.', service)
                 break
-            wait_time += 1
             time.sleep(1)
+            wait_time += 1
         else:
-            print(f'Timeout reached while waiting for {service} to stop. Exiting.')
-            sys.exit(1)
+            logger.error('Timeout while stopping %s', service)
+            return False
+    return True
 
 
-def start_services(services):
-    """
-    Starts the specified systemd services.
-
-    :param services: List of services to start.
-    """
-    for service in services:
-        print(f'Starting service: {service}')
-        success, output = systemd_command('start', service)
+def mount_partition(systemd_mount_unit: str = '', device: str = '', mount_point: str = '') -> bool:
+    '''Mounts a partition.'''
+    if systemd_mount_unit:
+        logger.info('Mounting with SystemD: %s', systemd_mount_unit)
+        success = systemd_command('start', systemd_mount_unit)
         if not success:
-            print(f'Failed to start service {service}: {output}')
-        else:
-            print(f'Service {service} started.')
-
-
-def mount_partition(mount_systemd_unit='', device='', mount_point=''):
-    """
-    Mounts a partition using either systemd or classic method.
-
-    :param mount_systemd_unit: Name of the systemd mount unit (e.g., 'media-data2tb.mount').
-    :param device: Device to mount (e.g., '/dev/sdX1').
-    :param mount_point: Mount point to use (e.g., '/mnt/data').
-    """
-    if mount_systemd_unit:
-        print(f'Mounting using SystemD: {mount_systemd_unit}')
-        success, output = systemd_command('start', mount_systemd_unit)
-        if not success:
-            print(f'Failed to mount using SystemD: {mount_systemd_unit}\n{output}')
-            sys.exit(1)
-        print(f'Successfully mounted {mount_systemd_unit} using SystemD.')
+            logger.error('Failed to mount using SystemD: %s', systemd_mount_unit)
+        return success
     elif device and mount_point:
-        print(f'Mounting partition {device} to {mount_point}')
-        success, output = run_command(['mount', device, mount_point])
+        logger.info('Mounting partition %s to %s', device, mount_point)
+        success = run_command(['mount', device, mount_point])
         if not success:
-            print(f'Failed to mount partition {device} to {mount_point}: {output}')
-            sys.exit(1)
-        print(f'Partition {device} mounted to {mount_point}.')
+            logger.error('Failed to mount %s to %s. stderr: %s',
+                         device, mount_point, run_command_stderr.strip())
+        return success
     else:
-        print('Invalid configuration: Specify either systemd_mount or device/mount_point for mounting.')
-        sys.exit(1)
+        logger.error('Invalid config: no systemd_mount or device/mount_point provided')
+        return False
 
 
-def unmount_partition(mount_systemd_unit='', device='', mount_point=''):
-    """
-    Unmounts a partition using either systemd or classic method.
-
-    :param mount_systemd_unit: Name of the systemd mount unit (e.g., 'media-data2tb.mount').
-    :param device: Device to unmount (e.g., '/dev/sdX1').
-    :param mount_point: Mount point to unmount (e.g., '/mnt/data').
-    """
-    if mount_systemd_unit:
-        print(f'Unmounting using SystemD: {mount_systemd_unit}')
-        success, output = systemd_command('stop', mount_systemd_unit)
+def unmount_partition(systemd_mount_unit: str = '', device: str = '', mount_point: str = '') -> bool:
+    '''Unmounts a partition.'''
+    if systemd_mount_unit:
+        logger.info('Unmounting with SystemD: %s', systemd_mount_unit)
+        success = systemd_command('stop', systemd_mount_unit)
         if not success:
-            print(f'Failed to unmount using SystemD: {mount_systemd_unit}\n{output}')
-            sys.exit(1)
-        print(f'Successfully unmounted {mount_systemd_unit} using SystemD.')
+            # Check status to see if it's busy or something else
+            systemd_command('status', systemd_mount_unit)
+            logs_lower = run_command_stdout.lower()
+            if 'target is busy' in logs_lower or 'resource busy' in logs_lower:
+                logger.error('Cannot unmount %s, it is busy.', systemd_mount_unit)
+            else:
+                logger.error('Failed to unmount using SystemD: %s', systemd_mount_unit)
+        return success
     elif mount_point:
-        print(f'Unmounting partition: {mount_point}')
-        success, output = run_command(['umount', mount_point])
+        logger.info('Unmounting partition: %s', mount_point)
+        success = run_command(['umount', mount_point])
         if not success:
-            print(f'Failed to unmount partition {mount_point}: {output}')
-            sys.exit(1)
-        print(f'Partition {mount_point} unmounted.')
+            logs_lower = run_command_stdout.lower()
+            if 'target is busy' in logs_lower or 'resource busy' in logs_lower:
+                logger.error('Cannot unmount %s, it is busy.', mount_point)
+            else:
+                logger.error('Failed to unmount partition %s', mount_point)
+        return success
     else:
-        print('Invalid configuration: Specify either systemd_mount or mount_point for unmounting.')
-        sys.exit(1)
+        logger.error('Invalid config: no systemd_mount or mount_point provided')
+        return False
 
 
-def main(action, config_file):
-    """
-    Main function to manage mount/unmount operations.
-
-    :param action: 'mount' or 'unmount'.
-    :param config_file: Path to the YAML configuration file.
-    """
+def main(action: str, config_file: str) -> None:
+    '''Main function.'''
     with open(config_file, 'r') as file:
         config = yaml.safe_load(file)
 
-    services = config.get('services', [])
-    systemd_mount_unit = config.get('systemd_mount', '')
-    device = config.get('device', '')
-    mount_point = config.get('mount_point', '')
-    timeout = config.get('timeout', 30)  # Default timeout is 30 seconds.
+    services: list = config.get('services', [])
+    systemd_mount_unit: str = config.get('systemd_mount', '')
+    device: str = config.get('device', '')
+    mount_point: str = config.get('mount_point', '')
+    timeout: int = config.get('timeout', 30)
+
+    if not stop_services(services, timeout):
+        logger.error('Stopping services failed. Exiting.')
+        sys.exit(1)
 
     if action == 'unmount':
-        stop_services(services, timeout)
-        unmount_partition(mount_systemd_unit, device, mount_point)
-        start_services(services)
+        if not unmount_partition(systemd_mount_unit, device, mount_point):
+            start_services(services)
+            sys.exit(2)
+        else:
+            logger.info('Unmount succeeded.')
     elif action == 'mount':
-        stop_services(services, timeout)
-        mount_partition(mount_systemd_unit, device, mount_point)
-        start_services(services)
-    else:
-        print('Invalid action. Use "mount" or "unmount".')
-        sys.exit(1)
+        if not mount_partition(systemd_mount_unit, device, mount_point):
+            start_services(services)
+            sys.exit(3)
+        else:
+            logger.info('Mount succeeded.')
+
+    start_services(services)
 
 
 if __name__ == '__main__':
     arguments = docopt(__doc__)
     action = 'mount' if arguments['mount'] else 'unmount'
     config_file = arguments['<config_file>']
+
+    verbose = arguments['--verbose']
+    log_level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(level=log_level, format='[%(levelname)s] %(message)s')
+
     main(action, config_file)
