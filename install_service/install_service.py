@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Union
 import file_comparator
 
-version = 2.0
+version = 2.2
 
 usage = '''
 Usage: install_service.py --dir=PATH --store=FILE
@@ -176,8 +176,8 @@ class FileEventsSystemd:
     """
     Class handling file events for systemd service management.
     """
-    
-    
+
+
     def file_filter(self, path, isdir) -> bool:
         # TODO: implement suffix-based filtering as needed.
         file_name = '/'.join(path)
