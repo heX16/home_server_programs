@@ -26,7 +26,23 @@ sudo systemctl stop dnsmasq
 
 ## Network Configuration
 
-### 1. Configure Static IP for AP Interface
+### 1. Create Virtual Interface with udev Rules
+
+Instead of manually creating virtual interfaces each time, use udev rules to automate this:
+
+```bash
+# Get MAC address
+MAC_ADDRESS="$(cat /sys/class/net/wlan0/address)"
+
+# Create udev rule
+sudo bash -c "cat > /etc/udev/rules.d/70-persistent-net.rules" << EOF
+SUBSYSTEM=="ieee80211", ACTION=="add|change", ATTR{macaddress}=="${MAC_ADDRESS}", KERNEL=="phy0", \\
+  RUN+="/sbin/iw phy phy0 interface add ap0 type __ap", \\
+  RUN+="/bin/ip link set ap0 address ${MAC_ADDRESS}"
+EOF
+```
+
+### 2. Configure Static IP for AP Interface
 
 Edit dhcpcd configuration:
 
@@ -38,12 +54,12 @@ Add the following at the end:
 
 ```
 # Configuration for AP
-interface wlan0
+interface ap0
     static ip_address=192.168.4.1/24
     nohook wpa_supplicant
 ```
 
-### 2. Configure DHCP Server (dnsmasq)
+### 3. Configure DHCP Server (dnsmasq)
 
 Backup original config and create new:
 
@@ -56,8 +72,10 @@ Add the following:
 
 ```
 # AP DHCP Server Configuration
-interface=wlan0
-dhcp-range=192.168.4.2,192.168.4.20,255.255.255.0,24h
+interface=ap0
+no-dhcp-interface=lo,wlan0
+bind-interfaces
+dhcp-range=192.168.4.2,192.168.4.20,255.255.255.0,12h
 domain=wlan
 address=/gw.wlan/192.168.4.1
 address=/#/192.168.4.1
@@ -66,6 +84,7 @@ address=/#/192.168.4.1
 bogus-priv
 no-resolv
 no-poll
+server=8.8.8.8
 
 # DHCP options
 # Option 114 - URL to configuration page
@@ -74,7 +93,7 @@ dhcp-option=114,http://192.168.4.1/wifi
 dhcp-option=72,192.168.4.1
 ```
 
-### 3. Configure Access Point (hostapd)
+### 4. Configure Access Point (hostapd)
 
 Create hostapd configuration:
 
@@ -86,7 +105,9 @@ Add the following:
 
 ```
 # AP Configuration
-interface=wlan0
+ctrl_interface=/var/run/hostapd
+ctrl_interface_group=0
+interface=ap0
 driver=nl80211
 ssid=RPi_Setup_AP
 hw_mode=g
@@ -98,7 +119,7 @@ ignore_broadcast_ssid=0
 wpa=2
 wpa_passphrase=raspberry
 wpa_key_mgmt=WPA-PSK
-wpa_pairwise=TKIP
+wpa_pairwise=TKIP CCMP
 rsn_pairwise=CCMP
 country_code=US
 ```
@@ -115,45 +136,34 @@ Update to:
 DAEMON_CONF="/etc/hostapd/hostapd.conf"
 ```
 
-### 4. Configure Simultaneous AP and Client Mode
+### 5. Configuring WiFi Client Connection
 
-Create a script to enable both AP and client functionality:
-
-```bash
-sudo nano /usr/local/bin/ap_client_mode.sh
-```
-
-Add the following:
+Use wpa_supplicant to manage the client connection with support for hidden networks:
 
 ```bash
-#!/bin/bash
-
-# Create virtual interface for AP
-sudo iw phy phy0 interface add ap0 type __ap
-sudo ip link set ap0 up
-
-# Update hostapd configuration to use ap0
-sudo sed -i 's/interface=wlan0/interface=ap0/g' /etc/hostapd/hostapd.conf
-sudo sed -i 's/interface=wlan0/interface=ap0/g' /etc/dnsmasq.conf
-
-# Configure wlan0 for client mode
-sudo ip link set wlan0 up
-
-# Restart services
-sudo systemctl restart hostapd
-sudo systemctl restart dnsmasq
-
-# Ensure wpa_supplicant is running for client mode
-sudo wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant/wpa_supplicant.conf
+sudo nano /etc/wpa_supplicant/wpa_supplicant.conf
 ```
 
-Make the script executable:
+Example configuration:
 
-```bash
-sudo chmod +x /usr/local/bin/ap_client_mode.sh
+```
+ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
+update_config=1
+country=US
+
+network={
+    ssid="HomeNetwork"
+    psk="password"
+    key_mgmt=WPA-PSK
+    scan_ssid=1
+    id_str="AP1"
+    priority=100
+}
 ```
 
-### 5. Configure Network Routing and Masquerading
+The `scan_ssid=1` parameter enables connection to hidden networks.
+
+### 6. Configure Network Routing and Masquerading
 
 Enable IPv4 forwarding:
 
@@ -173,10 +183,12 @@ Apply the change:
 sudo sysctl -p
 ```
 
-Add iptables rules:
+### 7. Create Startup Script
+
+Create a script to handle proper startup sequence:
 
 ```bash
-sudo nano /usr/local/bin/iptables_setup.sh
+sudo nano /usr/local/bin/ap_client_mode.sh
 ```
 
 Add the following:
@@ -184,34 +196,53 @@ Add the following:
 ```bash
 #!/bin/bash
 
-# Clear existing rules
-iptables -F
-iptables -t nat -F
+echo 'Starting Wifi AP and client...'
+# Wait for network interfaces to be ready
+sleep 30
 
-# Enable NAT
-iptables -t nat -A POSTROUTING -o wlan0 -j MASQUERADE
+# Force restart interfaces in correct order
+sudo ifdown --force wlan0
+sudo ifdown --force ap0
+sudo ifup ap0
+sudo ifup wlan0
+
+# Ensure wpa_supplicant is running for client mode
+sudo wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant/wpa_supplicant.conf
+
+# Enable IP forwarding
+sudo sysctl -w net.ipv4.ip_forward=1
+
+# Configure NAT
+sudo iptables -t nat -A POSTROUTING -s 192.168.4.0/24 ! -d 192.168.4.0/24 -j MASQUERADE
 
 # Allow established connections
-iptables -A FORWARD -i wlan0 -o ap0 -m state --state RELATED,ESTABLISHED -j ACCEPT
-iptables -A FORWARD -i ap0 -o wlan0 -j ACCEPT
+sudo iptables -A FORWARD -i wlan0 -o ap0 -m state --state RELATED,ESTABLISHED -j ACCEPT
+sudo iptables -A FORWARD -i ap0 -o wlan0 -j ACCEPT
 
 # Redirect HTTP traffic to our server
-iptables -t nat -A PREROUTING -i ap0 -p tcp --dport 80 -j DNAT --to-destination 192.168.4.1:80
-iptables -t nat -A PREROUTING -i ap0 -p tcp --dport 443 -j DNAT --to-destination 192.168.4.1:443
+sudo iptables -t nat -A PREROUTING -i ap0 -p tcp --dport 80 -j DNAT --to-destination 192.168.4.1:80
+sudo iptables -t nat -A PREROUTING -i ap0 -p tcp --dport 443 -j DNAT --to-destination 192.168.4.1:443
 
-# Save rules
-iptables-save > /etc/iptables/rules.v4
+# Save iptables rules
+sudo iptables-save > /etc/iptables/rules.v4
+
+# Restart DHCP service
+sudo systemctl restart dnsmasq
 ```
 
-Make executable:
+Make the script executable:
 
 ```bash
-sudo chmod +x /usr/local/bin/iptables_setup.sh
+sudo chmod +x /usr/local/bin/ap_client_mode.sh
 ```
 
-### 6. Autostart Configuration
+### 8. Autostart Configuration
 
-Create a service to start the dual mode:
+You can choose between two methods to autostart the configuration:
+
+#### Option A: Using systemd (more modern)
+
+Create a service:
 
 ```bash
 sudo nano /etc/systemd/system/ap-client-mode.service
@@ -227,7 +258,6 @@ After=network.target
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/ap_client_mode.sh
-ExecStartPost=/usr/local/bin/iptables_setup.sh
 RemainAfterExit=yes
 
 [Install]
@@ -240,26 +270,56 @@ Enable the service:
 sudo systemctl enable ap-client-mode.service
 ```
 
-## Configuring WiFi Client Connection
+#### Option B: Using cron (simpler)
 
-Use wpa_supplicant to manage the client connection:
+Add a cron job to run the script at boot:
 
 ```bash
-sudo nano /etc/wpa_supplicant/wpa_supplicant.conf
+crontab -e
 ```
 
-Example configuration:
+Add this line:
 
 ```
-ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
-update_config=1
-country=US
+@reboot /usr/local/bin/ap_client_mode.sh
+```
 
-network={
-    ssid="HomeNetwork"
-    psk="password"
-    key_mgmt=WPA-PSK
-}
+## Network Configuration Options
+
+You can choose between two approaches for network configuration:
+
+### Option A: Using dhcpcd (for newer Raspberry Pi OS)
+
+As already described in the "Configure Static IP" section above.
+
+### Option B: Using /etc/network/interfaces (for older Raspberry Pi OS)
+
+If you prefer the traditional network interfaces approach:
+
+```bash
+sudo nano /etc/network/interfaces
+```
+
+Replace with:
+
+```
+source-directory /etc/network/interfaces.d
+
+auto lo
+auto ap0
+auto wlan0
+iface lo inet loopback
+
+allow-hotplug ap0
+iface ap0 inet static
+    address 192.168.4.1
+    netmask 255.255.255.0
+    hostapd /etc/hostapd/hostapd.conf
+
+allow-hotplug wlan0
+iface wlan0 inet manual
+    wpa-roam /etc/wpa_supplicant/wpa_supplicant.conf
+iface AP1 inet dhcp
 ```
 
 ## Important Notes
@@ -274,6 +334,8 @@ network={
    - Check AP status: `sudo systemctl status hostapd`
    - Check DHCP status: `sudo systemctl status dnsmasq`
    - View logs: `sudo journalctl -xe`
+   - Check interface status: `ip a`
+   - Test connectivity: `ping -I wlan0 8.8.8.8`
 
 ## Integrating with Your WiFi Configuration Tool
 
@@ -283,3 +345,13 @@ Your existing Flask application should:
 2. Provide the interface for adding/modifying WiFi networks
 3. Include functionality to update wpa_supplicant.conf
 4. Restart the networking service after changes
+
+## Script-Based Installation
+
+For a more automated installation, you could create a script that:
+
+1. Takes parameters for SSID and password for both AP and client
+2. Handles error checking
+3. Performs all the configuration steps automatically
+
+This would be useful for deploying multiple devices or for users less familiar with Linux commands.
