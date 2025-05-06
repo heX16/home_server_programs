@@ -189,6 +189,18 @@ def unmount_partition(systemd_mount_unit: str = '', device: str = '', mount_poin
         return False
 
 
+def get_mount_info(systemd_mount_unit: str) -> dict:
+    '''Gets detailed information about the mount unit.'''
+    info = systemd_get_properties(systemd_mount_unit)
+    mount_info = {
+        'path': info.get('Where', 'Unknown'),
+        'device_id': info.get('BindsTo', 'Unknown').replace('\\x2d', '-'),
+        'last_active': info.get('ActiveEnterTimestamp', 'Unknown'),
+        'status': info.get('ActiveState', 'Unknown')
+    }
+    return mount_info
+
+
 def main(action: str, config_file: str) -> None:
     '''Main function.'''
     with open(config_file, 'r') as file:
@@ -199,6 +211,14 @@ def main(action: str, config_file: str) -> None:
     device = config.get('device', '')
     mount_point = config.get('mount_point', '')
     timeout = config.get('timeout', 30)
+
+    if systemd_mount_unit:
+        mount_info = get_mount_info(systemd_mount_unit)
+        logger.info('Disk information:')
+        logger.info('Path: %s', mount_info['path'])
+        logger.info('Device ID: %s', mount_info['device_id'])
+        logger.info('Last active: %s', mount_info['last_active'])
+        logger.info('Current status: %s', mount_info['status'])
 
     mounted = partition_is_mounted(systemd_mount_unit, device, mount_point)
     if action == 'unmount' and not mounted:
@@ -214,12 +234,16 @@ def main(action: str, config_file: str) -> None:
 
     if action == 'unmount':
         if not unmount_partition(systemd_mount_unit, device, mount_point):
+            error_info = run_command_stderr if run_command_stderr else 'Unknown error'
+            logger.error('Unmount failed. Error: %s', error_info)
             start_services(services)
             sys.exit(2)
         else:
             logger.info('Unmount succeeded.')
     elif action == 'mount':
         if not mount_partition(systemd_mount_unit, device, mount_point):
+            error_info = run_command_stderr if run_command_stderr else 'Unknown error'
+            logger.error('Mount failed. Error: %s', error_info)
             start_services(services)
             sys.exit(3)
         else:
