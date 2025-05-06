@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WiFi Manager</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            background-color: #f5f5f5;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .alert {
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 4px;
+            display: none;
+        }
+        .alert-success {
+            background-color: #dff0d8;
+            color: #3c763d;
+            border: 1px solid #d6e9c6;
+        }
+        .alert-danger {
+            background-color: #f2dede;
+            color: #a94442;
+            border: 1px solid #ebccd1;
+        }
+        .networks-container {
+            margin-top: 30px;
+        }
+        .network-item {
+            background-color: white;
+            padding: 10px;
+            margin-bottom: 8px;
+            border-radius: 4px;
+            border-left: 4px solid #4CAF50;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>WiFi Network Manager</h1>
+
+        <div id="alertBox" class="alert"></div>
+
+        <div class="form-container">
+            <div class="form-group">
+                <label for="ssid">WiFi Network Name (SSID):</label>
+                <input type="text" id="ssid" placeholder="Enter network name">
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password:</label>
+                <input type="password" id="password" placeholder="Enter password">
+            </div>
+
+            <button id="saveButton">Save Network</button>
+        </div>
+
+        <div class="networks-container">
+            <h2>Configured Networks</h2>
+            <div id="networksList"></div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const saveButton = document.getElementById('saveButton');
+            const ssidInput = document.getElementById('ssid');
+            const passwordInput = document.getElementById('password');
+            const alertBox = document.getElementById('alertBox');
+            const networksList = document.getElementById('networksList');
+
+            // Load existing networks when page loads
+            loadNetworks();
+
+            // Handle form submission
+            saveButton.addEventListener('click', function() {
+                const ssid = ssidInput.value.trim();
+                const password = passwordInput.value.trim();
+
+                if (!ssid || !password) {
+                    showAlert('Both SSID and password are required!', 'danger');
+                    return;
+                }
+
+                // Send data to backend
+                fetch('/api/wifi', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        ssid: ssid,
+                        password: password
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showAlert(data.message, 'success');
+                        // Clear form if successful
+                        ssidInput.value = '';
+                        passwordInput.value = '';
+                        // Reload networks list
+                        loadNetworks();
+                    } else {
+                        showAlert('Error: ' + data.message, 'danger');
+                    }
+                })
+                .catch(error => {
+                    showAlert('Error communicating with server: ' + error, 'danger');
+                });
+            });
+
+            function loadNetworks() {
+                fetch('/api/wifi')
+                .then(response => response.json())
+                .then(data => {
+                    networksList.innerHTML = '';
+
+                    if (data.networks && data.networks.length > 0) {
+                        data.networks.forEach(network => {
+                            const networkItem = document.createElement('div');
+                            networkItem.className = 'network-item';
+                            networkItem.textContent = network.ssid;
+                            networksList.appendChild(networkItem);
+                        });
+                    } else {
+                        networksList.innerHTML = '<p>No networks configured yet.</p>';
+                    }
+                })
+                .catch(error => {
+                    networksList.innerHTML = '<p>Error loading networks: ' + error + '</p>';
+                });
+            }
+
+            function showAlert(message, type) {
+                alertBox.textContent = message;
+                alertBox.className = 'alert alert-' + type;
+                alertBox.style.display = 'block';
+
+                // Hide alert after 5 seconds
+                setTimeout(() => {
+                    alertBox.style.display = 'none';
+                }, 5000);
+            }
+        });
+    </script>
+</body>
+</html>
