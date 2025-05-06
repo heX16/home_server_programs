@@ -16,12 +16,18 @@ def index():
 def serve_static(filename):
     return send_from_directory(app.static_folder, filename)
 
-# API endpoint for WiFi configuration
-@app.route('/api/wifi', methods=['GET', 'POST'])
-def wifi_config():
+# API endpoint for WiFi network management
+@app.route('/api/wifi', methods=['GET', 'POST', 'DELETE'])
+def wifi_management():
     wifi_manager = WiFiManager()
 
-    if request.method == 'POST':
+    # GET - List configured networks
+    if request.method == 'GET':
+        networks = wifi_manager.get_networks()
+        return jsonify({'networks': networks})
+
+    # POST - Add or update a network
+    elif request.method == 'POST':
         data = request.get_json()
         ssid = data.get('ssid')
         password = data.get('password')
@@ -32,9 +38,22 @@ def wifi_config():
         result = wifi_manager.add_or_update_network(ssid, password)
         return jsonify(result)
 
-    # GET method returns list of configured networks
-    networks = wifi_manager.get_networks()
-    return jsonify({'networks': networks})
+    # DELETE - Remove a network
+    elif request.method == 'DELETE':
+        ssid = request.args.get('ssid')
+
+        if not ssid:
+            return jsonify({'success': False, 'message': 'SSID parameter is required'}), 400
+
+        result = wifi_manager.remove_network(ssid)
+        return jsonify(result)
+
+# API endpoint for scanning available WiFi networks
+@app.route('/api/wifi_scan', methods=['GET'])
+def wifi_scan():
+    wifi_manager = WiFiManager()
+    networks = wifi_manager.scan_networks()
+    return jsonify({'available_networks': networks})
 
 
 if __name__ == '__main__':

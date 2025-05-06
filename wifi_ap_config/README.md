@@ -7,6 +7,8 @@ A simple web-based utility for Raspberry Pi that allows adding and managing WiFi
 - Add new WiFi networks with SSID and password
 - Update passwords for existing networks
 - View list of configured networks
+- Scan for available WiFi networks
+- Remove unwanted WiFi networks
 - Automatically restart WiFi service after changes
 
 ## Requirements
@@ -101,7 +103,13 @@ This application manages these network entries automatically.
    - Add the network if it doesn't exist
    - Update the password if the network exists with a different password
    - Do nothing if the network already exists with the same password
-   - Restart the WiFi service to apply changes
+
+4. API endpoints:
+   - `/api/wifi` - Main endpoint for WiFi network management:
+     - GET: List all configured WiFi networks
+     - POST: Add or update a WiFi network (requires SSID and password in JSON body)
+     - DELETE: Remove a configured WiFi network (requires SSID as query parameter)
+   - GET `/api/wifi_scan` - Scan for available WiFi networks in range
 
 ## Security Considerations
 

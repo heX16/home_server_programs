@@ -44,9 +44,19 @@
             border-radius: 4px;
             cursor: pointer;
             font-size: 16px;
+            margin-right: 5px;
         }
         button:hover {
             background-color: #45a049;
+        }
+        .delete-button {
+            background-color: #f44336;
+            float: right;
+            padding: 5px 10px;
+            font-size: 14px;
+        }
+        .delete-button:hover {
+            background-color: #d32f2f;
         }
         .alert {
             padding: 15px;
@@ -73,6 +83,38 @@
             margin-bottom: 8px;
             border-radius: 4px;
             border-left: 4px solid #4CAF50;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #ddd;
+        }
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            background: #eee;
+            margin-right: 5px;
+            border-radius: 4px 4px 0 0;
+        }
+        .tab.active {
+            background: #4CAF50;
+            color: white;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .scan-button {
+            background-color: #2196F3;
+            margin-bottom: 15px;
+        }
+        .scan-button:hover {
+            background-color: #0b7dda;
         }
     </style>
 </head>
@@ -82,7 +124,25 @@
 
         <div id="alertBox" class="alert"></div>
 
-        <div class="form-container">
+        <div class="tabs">
+            <div id="configuredTab" class="tab active">Configured Networks</div>
+            <div id="availableTab" class="tab">Available Networks</div>
+            <div id="addTab" class="tab">Add Network</div>
+        </div>
+
+        <div id="configuredContent" class="tab-content active">
+            <h2>Configured Networks</h2>
+            <div id="networksList"></div>
+        </div>
+
+        <div id="availableContent" class="tab-content">
+            <h2>Available Networks</h2>
+            <button id="scanButton" class="scan-button">Scan for Networks</button>
+            <div id="availableNetworksList"></div>
+        </div>
+
+        <div id="addContent" class="tab-content">
+            <h2>Add or Update Network</h2>
             <div class="form-group">
                 <label for="ssid">WiFi Network Name (SSID):</label>
                 <input type="text" id="ssid" placeholder="Enter network name">
@@ -95,20 +155,36 @@
 
             <button id="saveButton">Save Network</button>
         </div>
-
-        <div class="networks-container">
-            <h2>Configured Networks</h2>
-            <div id="networksList"></div>
-        </div>
     </div>
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const saveButton = document.getElementById('saveButton');
+            const scanButton = document.getElementById('scanButton');
             const ssidInput = document.getElementById('ssid');
             const passwordInput = document.getElementById('password');
             const alertBox = document.getElementById('alertBox');
             const networksList = document.getElementById('networksList');
+            const availableNetworksList = document.getElementById('availableNetworksList');
+
+            // Tab navigation
+            const tabs = document.querySelectorAll('.tab');
+            const tabContents = document.querySelectorAll('.tab-content');
+
+            tabs.forEach(tab => {
+                tab.addEventListener('click', function() {
+                    // Remove active class from all tabs and content
+                    tabs.forEach(t => t.classList.remove('active'));
+                    tabContents.forEach(c => c.classList.remove('active'));
+
+                    // Add active class to clicked tab
+                    this.classList.add('active');
+
+                    // Show corresponding content
+                    const contentId = this.id.replace('Tab', 'Content');
+                    document.getElementById(contentId).classList.add('active');
+                });
+            });
 
             // Load existing networks when page loads
             loadNetworks();
@@ -123,7 +199,7 @@
                     return;
                 }
 
-                // Send data to backend
+                // Send data to backend using the consolidated endpoint
                 fetch('/api/wifi', {
                     method: 'POST',
                     headers: {
@@ -141,14 +217,57 @@
                         // Clear form if successful
                         ssidInput.value = '';
                         passwordInput.value = '';
-                        // Reload networks list
+                        // Reload networks list and switch to configured tab
                         loadNetworks();
+                        document.getElementById('configuredTab').click();
                     } else {
                         showAlert('Error: ' + data.message, 'danger');
                     }
                 })
                 .catch(error => {
                     showAlert('Error communicating with server: ' + error, 'danger');
+                });
+            });
+
+            // Handle network scan
+            scanButton.addEventListener('click', function() {
+                this.textContent = 'Scanning...';
+                this.disabled = true;
+
+                fetch('/api/wifi_scan')
+                .then(response => response.json())
+                .then(data => {
+                    availableNetworksList.innerHTML = '';
+                    scanButton.textContent = 'Scan for Networks';
+                    scanButton.disabled = false;
+
+                    if (data.available_networks && data.available_networks.length > 0) {
+                        data.available_networks.forEach(network => {
+                            const networkItem = document.createElement('div');
+                            networkItem.className = 'network-item';
+
+                            const networkInfo = document.createElement('div');
+                            networkInfo.innerHTML = `<strong>${network.ssid}</strong><br>Signal: ${network.signal} dBm`;
+
+                            const connectButton = document.createElement('button');
+                            connectButton.textContent = 'Connect';
+                            connectButton.onclick = function() {
+                                ssidInput.value = network.ssid;
+                                document.getElementById('addTab').click();
+                            };
+
+                            networkItem.appendChild(networkInfo);
+                            networkItem.appendChild(connectButton);
+                            availableNetworksList.appendChild(networkItem);
+                        });
+                    } else {
+                        availableNetworksList.innerHTML = '<p>No networks found.</p>';
+                    }
+                })
+                .catch(error => {
+                    scanButton.textContent = 'Scan for Networks';
+                    scanButton.disabled = false;
+                    availableNetworksList.innerHTML = '<p>Error scanning networks: ' + error + '</p>';
                 });
             });
 
@@ -162,7 +281,21 @@
                         data.networks.forEach(network => {
                             const networkItem = document.createElement('div');
                             networkItem.className = 'network-item';
-                            networkItem.textContent = network.ssid;
+
+                            const ssidSpan = document.createElement('span');
+                            ssidSpan.textContent = network.ssid;
+
+                            const deleteButton = document.createElement('button');
+                            deleteButton.className = 'delete-button';
+                            deleteButton.textContent = 'Delete';
+                            deleteButton.onclick = function() {
+                                if (confirm(`Are you sure you want to delete the network "${network.ssid}"?`)) {
+                                    deleteNetwork(network.ssid);
+                                }
+                            };
+
+                            networkItem.appendChild(ssidSpan);
+                            networkItem.appendChild(deleteButton);
                             networksList.appendChild(networkItem);
                         });
                     } else {
@@ -171,6 +304,24 @@
                 })
                 .catch(error => {
                     networksList.innerHTML = '<p>Error loading networks: ' + error + '</p>';
+                });
+            }
+
+            function deleteNetwork(ssid) {
+                fetch(`/api/wifi?ssid=${encodeURIComponent(ssid)}`, {
+                    method: 'DELETE'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showAlert(`Network "${ssid}" has been deleted.`, 'success');
+                        loadNetworks();
+                    } else {
+                        showAlert('Error: ' + data.message, 'danger');
+                    }
+                })
+                .catch(error => {
+                    showAlert('Error communicating with server: ' + error, 'danger');
                 });
             }
 
