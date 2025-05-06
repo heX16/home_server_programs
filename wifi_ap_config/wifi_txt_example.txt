@@ -1,0 +1,2 @@
+MyWiFiNetwork
+MySecurePassword

@@ -10,6 +10,7 @@ A simple web-based utility for Raspberry Pi that allows adding and managing WiFi
 - Scan for available WiFi networks
 - Remove unwanted WiFi networks
 - Automatically restart WiFi service after changes
+- Boot-time WiFi configuration from /boot/wifi.txt file
 
 ## Requirements
 
@@ -124,3 +125,33 @@ This tool modifies system files and restarts system services. For security reaso
 - Check Apache error logs: `sudo tail -f /var/log/apache2/sysmon_error.log`
 - Ensure the www-data user has write permissions to wpa_supplicant.conf
 - Verify the location of wpa_supplicant.conf on your Raspberry Pi version
+
+## Boot-time WiFi Configuration
+
+This tool includes a service that checks for WiFi credentials in the `/boot/wifi.txt` file during boot and automatically applies them. This is especially useful for headless setup of new devices.
+
+### How to use:
+
+1. Create a file named `wifi.txt` in the `/boot` partition with the following format:
+   ```
+   MyWiFiSSID
+   MyWiFiPassword
+   ```
+   - First line: The WiFi network name (SSID)
+   - Second line: The WiFi password
+
+2. When the Raspberry Pi boots, it will automatically:
+   - Read the credentials from the file
+   - Apply them to the WiFi configuration
+   - Connect to the specified network
+
+3. To install the boot-time WiFi configuration service:
+   ```bash
+   sudo ./install_wifi_boot_service.sh
+   ```
+
+### Why this is useful:
+
+- Simplifies headless setup (no monitor/keyboard needed)
+- Since the `/boot` partition is accessible from other operating systems, you can configure WiFi before first boot
+- Allows easy WiFi reconfiguration if you need to move the device to a different network
