@@ -1,0 +1,17 @@
+---
+networks:
+  - ssid: HomeNetwork
+    password: SecurePassword123
+    # No 'done' flag means this network will be configured
+
+  - ssid: OfficeWiFi
+    password: Office@2023
+    # No 'done' flag means this network will be configured
+
+  - ssid: CoffeeShopWiFi
+    password: PublicAccess
+    done: true  # This network is already configured and will be skipped
+
+  - ssid: GuestNetwork
+    password: GuestPass
+    # No 'done' flag means this network will be configured
