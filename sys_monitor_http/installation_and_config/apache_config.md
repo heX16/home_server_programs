@@ -1,14 +1,3 @@
-
-
-# install FastAPI
-
-`pip install fastapi uvicorn psutil`
-
-# install Flask
-
-`pip install Flask psutil`
-
-
 # Flask CGI-скрипт в Apache2
 
 Flask может работать как CGI-скрипт в Apache2, что позволит запускать скрипт только при поступлении запроса, создавать ответ и завершаться, не занимая постоянно оперативную память. Это хорошее решение для редко используемых скриптов.
@@ -80,4 +69,3 @@ sudo systemctl restart apache2
 4. Отладка: в случае проблем проверьте логи Apache2 (`/var/log/apache2/error.log`).
 
 Этот подход позволит вам использовать ваш Flask-скрипт как CGI в Apache2, экономя оперативную память, когда скрипт не используется.
-

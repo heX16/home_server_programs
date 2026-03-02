@@ -1,0 +1,8 @@
+# App path (same as Apache ScriptAlias): /srv/programs/sys_monitor_http
+[Unit]
+Description=Sys Monitor HTTP - Socket proxy (idle timeout)
+Requires=sysmon-app.service
+After=sysmon-app.service
+
+[Service]
+ExecStart=/lib/systemd/systemd-socket-proxyd --exit-idle-time=60s 127.0.0.1:64801

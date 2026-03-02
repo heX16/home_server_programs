@@ -1,0 +1,8 @@
+[Unit]
+Description=Sys Monitor HTTP - Socket
+
+[Socket]
+ListenStream=16801
+
+[Install]
+WantedBy=sockets.target

@@ -1,0 +1,9 @@
+[Unit]
+Description=Sys Monitor HTTP - Flask app
+StopWhenUnneeded=yes
+
+[Service]
+Type=simple
+WorkingDirectory=/srv/programs/sys_monitor_http
+ExecStart=/usr/bin/python3 -m flask --app flask_backend:app run --host=127.0.0.1 --port=64801
+Restart=no
