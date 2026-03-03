@@ -1,15 +1,16 @@
 #!/bin/bash
 
-update-alternatives --install /usr/bin/python python /usr/bin/python3 1
+update-alternatives --install /usr/bin/python python /usr/bin/python3 100
 
 apt install python3-pip
 pip3 install --upgrade setuptools
 python3 -m pip install --upgrade pip
 
-sudo pip install OrangePi.GPIO
-
+# OrangePi
+# sudo pip install OrangePi.GPIO
 # транслитерация
-pip3 install transliterate
+#pip3 install transliterate
+
 # YAML
 pip3 install pyyaml
 # MQTT

@@ -1,21 +1,32 @@
 #!/bin/sh
+# `usermod -aG GROUPS USER` adds USER to groups GROUPS
 
-adduser --system --group syncthing
-usermod -G dialout -a syncthing
-usermod -G syncthing -a syncthing
+# Examples:
+# `add_user_to_groups syncthing share`
+# Result:
+# user `syncthing` has access to group `share`.
+# user `share` still cannot read group `syncthing`.
+
+# add_user_to_groups USER GROUP1[,GROUP2,...] — add USER to groups (USER first, then comma-separated groups)
+add_user_to_groups() {
+  user=$1
+  groups=$2
+  [ -n "$user" ] && [ -n "$groups" ] && usermod -a -G "$groups" "$user"
+}
 
 groupadd share
-usermod -a -G openhab,syncthing,share,sambashare,debian-transmission       share
-usermod -a -G share openhab
-usermod -a -G share syncthing
-usermod -a -G share sambashare
-usermod -a -G share debian-transmission
 
-usermod -aG syncthing,www-data share
-usermod -aG share,www-data syncthing
-usermod -aG share,syncthing,www-data root
+add_user_to_groups syncthing   dialout
+add_user_to_groups syncthing   syncthing
 
-usermod -aG syncthing www-data
-# not secure: usermod -aG share www-data
+add_user_to_groups openhab     share
+add_user_to_groups syncthing   share
+add_user_to_groups sambashare  share
 
+add_user_to_groups syncthing   share,www-data
+add_user_to_groups root        share,syncthing,www-data
 
+add_user_to_groups www-data    syncthing
+
+# add_user_to_groups debian-transmission     share
+# not secure: add_user_to_groups www-data    share
