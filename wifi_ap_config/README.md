@@ -1,3 +1,13 @@
+
+# WARNING!!!
+
+Не работает под RaspOS!!!
+
+Потомучто они не используют wpa_supplicant.
+Там нет wpa_cli!
+
+
+
 # WiFi AP Configuration Tool
 
 A simple web-based utility for Raspberry Pi that allows adding and managing WiFi networks through a web interface.
