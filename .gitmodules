@@ -1,0 +1,3 @@
+[submodule "fssaver"]
+	path = fssaver
+	url = https://github.com/heX16/fssaver.git
