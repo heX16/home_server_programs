@@ -190,7 +190,7 @@ class FileEventsSystemd:
 
         timer_file = service_has_timer(file_name)
 
-        sh('cp {0}{1} /etc/systemd/system/', self.dir, str(file_name))
+        sh('cp {0} /etc/systemd/system/', str(Path(self.dir) / file_name))
 
         if timer_file == False:
             if systemd_file_supports_enable(unit_type):
@@ -222,7 +222,7 @@ class FileEventsSystemd:
 
         if systemd_file_supports_start(unit_type):
             sh('sudo systemctl stop {0}', file_name)
-        sh('cp {1}{0} /etc/systemd/system/', file_name, self.dir)
+        sh('cp {0} /etc/systemd/system/', str(Path(self.dir) / file_name))
         sh('sudo systemctl daemon-reload')
 
         if timer_file == False:

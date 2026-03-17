@@ -2,3 +2,4 @@
 *.lnk
 habits_web/**
 *.pyc
+/install_service/*.yaml
