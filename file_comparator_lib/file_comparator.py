@@ -3,6 +3,7 @@ version = 2.2
 
 import yaml # pip3 install pyyaml
 import datetime
+import time
 import glob
 import os
 from pprint import *
@@ -68,8 +69,86 @@ TODO:
 
 """
 
+def fss_to_tree(fss_map: dict) -> dict:
+  """
+  Convert flat FSS-YAML mapping (path -> metadata) into nested tree.
+  Only entries with type: file and mtime are considered.
+  """
+  tree: dict = {}
+  for full_path, meta in (fss_map or {}).items():
+    if not isinstance(meta, dict):
+      continue
+    if meta.get('type') != 'file':
+      continue
+    mtime_str = meta.get('mtime')
+    if not mtime_str:
+      continue
+    try:
+      mtime_epoch = fss_to_epoch(mtime_str)
+    except Exception:
+      continue
+    parts = [p for p in str(full_path).split('/') if p]
+    if not parts:
+      continue
+    node = tree
+    for part in parts[:-1]:
+      node = node.setdefault(part, {})
+    node[parts[-1]] = mtime_epoch
+  return tree
+
+
+def tree_to_fss(store_tree: dict) -> dict:
+  """
+  Convert nested store tree into flat FSS-YAML mapping (path -> metadata).
+  """
+  fss_map: dict = {}
+
+  def walk(node: dict, prefix: list):
+    for name, value in (node or {}).items():
+      current_path = prefix + [name]
+      if isinstance(value, dict):
+        walk(value, current_path)
+      else:
+        # leaf file: value is epoch seconds
+        try:
+          ts = int(value)
+        except (TypeError, ValueError):
+          continue
+        path_str = '/'.join(current_path)
+        fss_map[path_str] = {
+          'type': 'file',
+          'mtime': epoch_to_fss(ts),
+        }
+
+  walk(store_tree or {}, [])
+  return fss_map
+
+
 def time_trim_ms(t: datetime.datetime):
   return datetime.datetime(t.year, t.month, t.day, t.hour, t.minute, t.second)
+
+
+def epoch_from_mtime(path: str) -> int:
+  """
+  Return file mtime in whole seconds since epoch.
+  """
+  return int(os.path.getmtime(path))
+
+
+def epoch_to_fss(ts: int) -> str:
+  """
+  Convert epoch seconds to FSS timestamp string: YYYY-MM-DD_HH:MM:SSZ (UTC).
+  """
+  dt = datetime.datetime.utcfromtimestamp(ts)
+  return dt.strftime('%Y-%m-%d_%H:%M:%SZ')
+
+
+def fss_to_epoch(ts: str) -> int:
+  """
+  Parse FSS timestamp string (YYYY-MM-DD_HH:MM:SSZ) to epoch seconds.
+  """
+  dt = datetime.datetime.strptime(ts, '%Y-%m-%d_%H:%M:%SZ')
+  return int(dt.replace(tzinfo=datetime.timezone.utc).timestamp())
 
 def GetFileContent(fileName, encoding='utf-8'):
   """ возвращает строку с текстовым содержимым файла (в нужной кодировке) """
@@ -116,8 +195,8 @@ class FileStoreComparator:
         if os.path.isfile(f):
           if self.file_extension=='*' or os.path.splitext(f)[1][1:]==self.file_extension:
             if self.event_filter(path+[f], False):
-              # add file to file list
-              r.update({f: time_trim_ms(datetime.datetime.fromtimestamp(os.path.getmtime(f))) })
+              # add file to file list (store epoch seconds)
+              r.update({f: epoch_from_mtime(f)})
 
         if os.path.isdir(f) and self.recursion and self.event_filter(path+[f], True):
           dirlist = self.get_file_list_and_date(f, path+[f]) # <- RECURSION!
@@ -210,20 +289,25 @@ class FileStoreComparator:
       self.on_store_updated(path+[k])
       self.event_file_added(path+[k])
 
+
   def load_store(self):
     try:
       with open(self.store_file, 'r', encoding=self.encoding) as f:
-        store = yaml.safe_load(f)
-        if store==None:
-          store = {}
+        raw = yaml.safe_load(f)
+        if raw is None:
+          raw = {}
     except IOError as e:
       # TODO: except - нужна более обширная обработка.
-      print("I/O error({0}): {1}".format(e.errno, e.strerror))
-      store = {}
-    return store
+      print('I/O error({0}): {1}'.format(e.errno, e.strerror))
+      raw = {}
+    # raw is FSS-YAML flat mapping; convert to internal tree.
+    store_tree = fss_to_tree(raw)
+    return store_tree
 
   def save_store(self, store):
-    data = yaml.dump(store, default_flow_style=False, allow_unicode=True)
+    # Convert internal tree to FSS-YAML flat mapping.
+    fss_map = tree_to_fss(store or {})
+    data = yaml.dump(fss_map, default_flow_style=False, allow_unicode=True)
     if GetFileContent(self.store_file, encoding=self.encoding) != data:
       with open(self.store_file, 'w', encoding=self.encoding) as f:
         f.write(data)
