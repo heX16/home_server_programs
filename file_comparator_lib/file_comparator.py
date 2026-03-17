@@ -1,4 +1,4 @@
-﻿version = 2.2
+version = 2.2
 # 2022.05.09
 
 import yaml # pip3 install pyyaml
@@ -94,6 +94,14 @@ class FileStoreComparator:
     self.on_changed_store_error = None
     self.on_filter = None
     self.recursion = True
+    self._store_root = None
+
+  def on_store_updated(self, path: list):
+    """
+    Hook called right after the store is mutated.
+    Override in subclasses (default: do nothing).
+    """
+    pass
 
   def get_file_list_and_date(self, targetdir, path):
     ''' Получить список всех файлов и даты их модификации.
@@ -168,6 +176,7 @@ class FileStoreComparator:
       if datech==None:
         # present in 'store', none in 'files' - file removed
         del store[f]
+        self.on_store_updated(path+[f])
         self.event_file_removed(path+[f])
       # if isinstance... type(datech)!=type(v) ... - file_to_dir, dir_to_file....
       else:
@@ -185,17 +194,20 @@ class FileStoreComparator:
         if datech > v:
           # present in 'store' and 'files' by datetime changed
           store[f]=datech
+          self.on_store_updated(path+[f])
           self.event_file_changed(path+[f])
         else:
           if datech < v:
             # present in 'store' and 'files' by datetime changed, but not correct
             store[f]=datech
+            self.on_store_updated(path+[f])
             self.event_file_changed_store_error(path+[f])
     # end _for_ in store
 
     # enum lefted 'files' - added files.
     for k,v in files.items():
       store.update({k:v})
+      self.on_store_updated(path+[k])
       self.event_file_added(path+[k])
 
   def load_store(self):
@@ -218,6 +230,7 @@ class FileStoreComparator:
 
   def compare(self):
     store = self.load_store()
+    self._store_root = store
     files = self.get_file_list_and_date(self.targetdir, [])
     self.compare_list(store, files, [])
     self.save_store(store)
