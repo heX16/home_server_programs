@@ -1,3 +1,4 @@
 .idea/
 *.lnk
 habits_web/**
+*.pyc
