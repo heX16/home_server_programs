@@ -238,6 +238,14 @@ class FileEventsSystemd:
         print('Store error:', file_name)
 
 
+class FileStoreComparatorAutoSave(file_comparator.FileStoreComparator):
+    def on_store_updated(self, path: list):
+        # Persist store early (before any external commands that may hang).
+        if self._store_root is None:
+            return
+        self.save_store(self._store_root)
+
+
 def main():
     options = docopt(usage)
 
@@ -246,7 +254,7 @@ def main():
     print('lib: file_comparator. Ver:', file_comparator.version)
     event = FileEventsSystemd()
     event.dir = options['--dir']
-    store_cmp = file_comparator.FileStoreComparator(options['--store'], options['--dir'])
+    store_cmp = FileStoreComparatorAutoSave(options['--store'], options['--dir'])
     store_cmp.on_added = event.file_added
     store_cmp.on_removed = event.file_removed
     store_cmp.on_changed = event.file_changed
