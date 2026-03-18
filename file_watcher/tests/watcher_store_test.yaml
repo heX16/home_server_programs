@@ -1,55 +1,378 @@
-autodisable:
-  autodisable.py: 2018-09-05 20:24:20
-  easy_timer.py: 2018-08-24 01:06:57
-  mqtt_variable.py: 2018-09-04 22:21:33
-config_gen:
-  gen_test.bat: 2018-08-30 16:53:44
-  gen_test_openhab.py: 2018-08-30 13:12:53
-extbus_proxy:
-  extbus_mqtt.elf: 2018-09-04 22:13:58
-  extbus_mqtt_old_stable.elf: 2018-04-01 16:14:53
-  extbus_mqtt_uart.sh: 2018-05-10 15:05:21
-  extbus_mqtt_udp.sh: 2018-05-10 14:58:35
-file_watcher:
-  file_comparator.py: 2018-09-07 11:04:49
-  oyaml.py: 2018-09-07 10:58:43
-  watcher.py: 2018-09-07 11:05:46
-  watcher_config_test.yaml: 2018-09-07 00:11:36
-  watcher_test.bat: 2018-09-07 00:09:01
-  watch_example.py: 2018-09-06 20:48:02
-grand_access:
-  set_access.sh: 2018-08-31 17:21:54
-  watchmedo_old_ver:
-    access_cmd.sh: 2018-05-03 15:08:46
-    filewatcher_access.sh: 2018-08-22 15:32:57
-    run_filewatchers.sh: 2018-05-03 14:55:28
-install_service:
-  file_comparator.py: 2018-09-06 12:56:58
-  install_service.py: 2018-08-31 16:13:48
-remap:
-  CaseInsensitiveDict.py: 2018-01-27 18:58:36
-  mqtt_remap.py: 2018-09-04 22:18:08
-  remap.sh: 2018-09-04 12:42:32
-  run.bat: 2018-02-04 15:53:23
-smart_motion_control:
-  easy_timer.py: 2018-08-24 01:06:57
-  mqtt_variable.py: 2018-09-04 22:21:33
-  run.bat: 2018-09-06 20:03:04
-  run.sh: 2018-09-06 20:02:44
-  smart_motion_control.py: 2018-09-06 08:50:27
-  smart_motion_control_lib.py: 2018-08-23 10:59:14
-smb.conf: 2018-08-30 16:16:08
-sunset:
-  sunset_lib.py: 2018-05-16 23:05:18
-support_script:
-  group_config.sh: 2018-08-31 17:31:42
-  mqtt_clear_retain.sh: 2018-09-06 20:06:38
-  oh_restart.sh: 2018-05-03 13:06:09
-  oh_update.sh: 2018-05-03 13:05:08
-  pip_install.bat: 2018-09-04 23:01:12
-  pip_install.sh: 2018-08-30 15:35:08
-  set_access.sh: 2018-08-30 20:24:32
-  test:
-    install_service.sh: 2018-08-24 01:17:25
-    wakeup_comp.sh: 2018-08-07 19:21:11
-todo.txt: 2018-09-05 21:07:00
+autodisable/autodisable.py:
+  type: file
+  mtime: 2019-04-24_13:46:23Z
+autodisable/easy_timer.py:
+  type: file
+  mtime: 2025-01-04_10:24:20Z
+autodisable/mqtt_variable.py:
+  type: file
+  mtime: 2018-11-30_15:51:41Z
+config_gen/gen_test.bat:
+  type: file
+  mtime: 2018-11-30_15:51:41Z
+config_gen/gen_test_openhab.py:
+  type: file
+  mtime: 2018-11-30_15:51:41Z
+crond_task_installer/crond_task_installer.py:
+  type: file
+  mtime: 2025-01-19_22:35:55Z
+crond_task_installer/example.cron:
+  type: file
+  mtime: 2025-01-19_22:43:57Z
+crond_task_installer/file_comparator.py:
+  type: file
+  mtime: 2025-01-04_10:02:21Z
+disk_manager/config_example.yaml:
+  type: file
+  mtime: 2025-01-19_20:23:58Z
+disk_manager/disk_manager.py:
+  type: file
+  mtime: 2025-02-27_17:30:46Z
+easy_timer_lib/easy_timer.py:
+  type: file
+  mtime: 2018-11-30_15:51:42Z
+extbus_proxy/extbus_mqtt.elf:
+  type: file
+  mtime: 2018-11-30_15:51:41Z
+extbus_proxy/extbus_mqtt_uart.sh:
+  type: file
+  mtime: 2018-11-30_15:51:41Z
+extbus_proxy/extbus_mqtt_udp.sh:
+  type: file
+  mtime: 2018-11-30_15:51:41Z
+file_comparator_lib/file_comparator.py:
+  type: file
+  mtime: 2026-03-17_22:07:30Z
+file_comparator_lib/tests/example.py:
+  type: file
+  mtime: 2018-11-30_15:51:42Z
+file_comparator_lib/tests/fswatchdog.py:
+  type: file
+  mtime: 2021-07-20_22:24:32Z
+file_watcher/file_comparator.py:
+  type: file
+  mtime: 2025-01-04_10:02:21Z
+file_watcher/oyaml.py:
+  type: file
+  mtime: 2018-11-30_15:51:42Z
+file_watcher/readme_rus.md:
+  type: file
+  mtime: 2022-05-03_17:37:37Z
+file_watcher/tests/watcher_config_test.yaml:
+  type: file
+  mtime: 2018-11-30_15:51:42Z
+file_watcher/tests/watcher_test.bat:
+  type: file
+  mtime: 2026-03-18_19:49:22Z
+file_watcher/watcher.py:
+  type: file
+  mtime: 2026-03-18_19:40:34Z
+free_space_eraser/free_space_eraser.py:
+  type: file
+  mtime: 2025-05-07_10:09:51Z
+free_space_eraser/README.md:
+  type: file
+  mtime: 2025-05-07_10:10:04Z
+fssaver/documentation/bugs.md:
+  type: file
+  mtime: 2026-03-11_15:16:26Z
+fssaver/documentation/fss_format_short_rus.md:
+  type: file
+  mtime: 2026-03-11_15:16:26Z
+fssaver/documentation/gpt_info_rus.md:
+  type: file
+  mtime: 2026-03-11_15:16:26Z
+fssaver/documentation/promts.md:
+  type: file
+  mtime: 2026-03-11_15:16:26Z
+fssaver/documentation/todo.md:
+  type: file
+  mtime: 2026-03-11_15:16:26Z
+fssaver/fss_clean.py:
+  type: file
+  mtime: 2026-03-11_15:16:26Z
+fssaver/fss_compare.py:
+  type: file
+  mtime: 2026-03-11_15:16:26Z
+fssaver/fss_create_apply_script.py:
+  type: file
+  mtime: 2026-03-11_15:16:26Z
+fssaver/fss_merge.py:
+  type: file
+  mtime: 2026-03-11_15:16:26Z
+fssaver/fss_run_comparison.py:
+  type: file
+  mtime: 2026-03-11_15:16:26Z
+fssaver/fss_save.py:
+  type: file
+  mtime: 2026-03-11_15:16:26Z
+fssaver/fss_to_diskdir.py:
+  type: file
+  mtime: 2026-03-11_15:16:26Z
+fssaver/fss_to_empty_zip.py:
+  type: file
+  mtime: 2026-03-11_15:16:26Z
+fssaver/fss_utils.py:
+  type: file
+  mtime: 2026-03-11_15:16:26Z
+fssaver/fss_yaml_clean.py:
+  type: file
+  mtime: 2026-03-11_15:16:26Z
+fssaver/requirements.txt:
+  type: file
+  mtime: 2026-03-11_15:16:26Z
+fssaver/tests/changed.csv:
+  type: file
+  mtime: 2026-03-11_15:16:26Z
+fssaver/tests/deleted.csv:
+  type: file
+  mtime: 2026-03-11_15:16:26Z
+fssaver/tests/fs_struct_comparison_test.bat:
+  type: file
+  mtime: 2026-03-11_15:16:26Z
+fssaver/tests/full_run.bat:
+  type: file
+  mtime: 2026-03-11_15:16:26Z
+fssaver/tests/moved.csv:
+  type: file
+  mtime: 2026-03-11_15:16:26Z
+fssaver/tests/new.csv:
+  type: file
+  mtime: 2026-03-11_15:16:26Z
+fssaver/tests/test_exif.jpg:
+  type: file
+  mtime: 2026-03-11_15:16:26Z
+fssaver/tests/test_initial_state.yaml:
+  type: file
+  mtime: 2026-03-11_15:16:26Z
+fssaver/tests/test_new_state.yaml:
+  type: file
+  mtime: 2026-03-11_15:16:26Z
+fssaver/test_fss_scripts.py:
+  type: file
+  mtime: 2026-03-11_15:16:26Z
+grand_access/set_access.sh:
+  type: file
+  mtime: 2024-09-28_14:20:41Z
+grand_access/watchmedo_old_ver/access_cmd.sh:
+  type: file
+  mtime: 2018-11-30_15:51:41Z
+grand_access/watchmedo_old_ver/filewatcher_access.sh:
+  type: file
+  mtime: 2018-11-30_15:51:41Z
+grand_access/watchmedo_old_ver/run_filewatchers.sh:
+  type: file
+  mtime: 2018-11-30_15:51:41Z
+ignore_list.txt:
+  type: file
+  mtime: 2018-12-09_18:07:18Z
+install_service/file_comparator.py:
+  type: file
+  mtime: 2025-01-04_10:02:21Z
+install_service/install_service.py:
+  type: file
+  mtime: 2026-03-18_19:46:00Z
+install_service/README.md:
+  type: file
+  mtime: 2026-03-05_13:30:11Z
+install_service/README_RUS.md:
+  type: file
+  mtime: 2026-03-05_13:30:45Z
+install_service/test_store.yaml:
+  type: file
+  mtime: 2026-03-17_22:10:44Z
+install_software_to_server/python_and_modules.sh:
+  type: file
+  mtime: 2026-03-02_18:25:26Z
+install_software_to_server/user_and_group.sh:
+  type: file
+  mtime: 2026-03-02_15:43:32Z
+lamp_scenario/config.md:
+  type: file
+  mtime: 2019-03-27_12:30:09Z
+lamp_scenario/lamp_scen-config_example.csv:
+  type: file
+  mtime: 2019-05-09_13:30:39Z
+lamp_scenario/lamp_scen-test-config.csv:
+  type: file
+  mtime: 2019-04-24_14:22:21Z
+lamp_scenario/lamp_scenario.py:
+  type: file
+  mtime: 2021-04-30_07:48:17Z
+lamp_scenario/mqtt_dev_lib.py:
+  type: file
+  mtime: 2019-04-01_13:45:01Z
+lamp_scenario/ТЗ.txt:
+  type: file
+  mtime: 2019-04-24_17:21:43Z
+led_blinker/led-blinker.service:
+  type: file
+  mtime: 2021-02-05_03:24:24Z
+led_blinker/led_blinker.py:
+  type: file
+  mtime: 2021-02-06_01:15:50Z
+motion_detector/bug.txt:
+  type: file
+  mtime: 2018-11-30_15:51:42Z
+motion_detector/easy_timer.py:
+  type: file
+  mtime: 2025-01-04_10:24:20Z
+motion_detector/motion_detector.py:
+  type: file
+  mtime: 2022-05-08_23:06:32Z
+motion_detector/run.bat:
+  type: file
+  mtime: 2018-11-30_15:51:42Z
+motion_detector/run.sh:
+  type: file
+  mtime: 2018-11-30_15:51:42Z
+motion_detector/show.sh:
+  type: file
+  mtime: 2018-11-30_15:51:42Z
+motion_detector/smart_motion_control_lib.py:
+  type: file
+  mtime: 2018-11-30_15:51:42Z
+motion_detector/sunset_lib.py:
+  type: file
+  mtime: 2018-11-30_15:51:42Z
+remap/CaseInsensitiveDict.py:
+  type: file
+  mtime: 2018-11-30_15:51:41Z
+remap/mqtt_remap.py:
+  type: file
+  mtime: 2024-09-06_18:02:11Z
+remap/remap.csv:
+  type: file
+  mtime: 2020-01-04_13:28:32Z
+remap/remap.sh:
+  type: file
+  mtime: 2018-11-30_15:51:41Z
+remap/run.bat:
+  type: file
+  mtime: 2018-11-30_15:51:41Z
+req.txt:
+  type: file
+  mtime: 2025-05-11_07:12:13Z
+sunset/sunset_lib.py:
+  type: file
+  mtime: 2018-11-30_15:51:41Z
+sys_monitor_http/fastapi_backend.py:
+  type: file
+  mtime: 2026-03-01_19:03:19Z
+sys_monitor_http/flask_app.py:
+  type: file
+  mtime: 2026-03-02_13:11:07Z
+sys_monitor_http/flask_backend.py:
+  type: file
+  mtime: 2026-03-02_13:11:12Z
+sys_monitor_http/flask_cgi_backend.exec.py:
+  type: file
+  mtime: 2026-03-02_13:11:21Z
+sys_monitor_http/gpt_info.md:
+  type: file
+  mtime: 2026-03-01_19:43:24Z
+sys_monitor_http/installation_and_config/apache_cfg/sys_monitor_http.conf:
+  type: file
+  mtime: 2024-09-28_14:31:45Z
+sys_monitor_http/installation_and_config/apache_config.md:
+  type: file
+  mtime: 2026-03-02_12:42:50Z
+sys_monitor_http/installation_and_config/dependencies.md:
+  type: file
+  mtime: 2026-03-02_12:40:09Z
+sys_monitor_http/installation_and_config/sysmon.service:
+  type: file
+  mtime: 2026-03-05_00:42:56Z
+sys_monitor_http/installation_and_config/systemd_cfg/sysmon-app.service:
+  type: file
+  mtime: 2026-03-15_18:59:56Z
+sys_monitor_http/installation_and_config/systemd_cfg/sysmon.service:
+  type: file
+  mtime: 2026-03-15_19:00:46Z
+sys_monitor_http/installation_and_config/systemd_cfg/sysmon.socket:
+  type: file
+  mtime: 2026-03-15_19:00:16Z
+sys_monitor_http/installation_and_config/systemd_config.md:
+  type: file
+  mtime: 2026-03-02_12:55:45Z
+sys_monitor_http/install_sysmon_systemd.sh:
+  type: file
+  mtime: 2026-03-02_13:01:20Z
+sys_monitor_http/static/index.html:
+  type: file
+  mtime: 2026-03-01_19:50:22Z
+sys_monitor_http/static/system_monitor.js:
+  type: file
+  mtime: 2026-03-01_19:50:39Z
+sys_monitor_http/system_info.py:
+  type: file
+  mtime: 2026-03-01_19:36:49Z
+sys_monitor_http/WIP/rpi_status - vcgencmd.md:
+  type: file
+  mtime: 2026-03-01_19:09:01Z
+sys_monitor_http/WIP/traffic_monitor_TZ.md:
+  type: file
+  mtime: 2025-10-31_10:49:10Z
+test_zone/mqtt-async2.py:
+  type: file
+  mtime: 2018-11-30_15:51:41Z
+test_zone/openwrt_router_port_config.py:
+  type: file
+  mtime: 2021-11-07_17:10:41Z
+test_zone/test_gpio/gpio_readall.sh:
+  type: file
+  mtime: 2021-02-05_03:05:29Z
+test_zone/test_gpio/OrangePi_GPIO/blink.py:
+  type: file
+  mtime: 2021-02-05_03:13:52Z
+test_zone/test_gpio/pyA20/gpio_blink(2).py:
+  type: file
+  mtime: 2021-02-05_02:32:37Z
+test_zone/test_gpio/pyA20/gpio_blink.py:
+  type: file
+  mtime: 2021-02-05_02:38:36Z
+test_zone/test_gpio/pyA20/gpio_blink_2.py:
+  type: file
+  mtime: 2021-02-05_02:33:26Z
+test_zone/test_gpio/wiringOP.sh:
+  type: file
+  mtime: 2021-02-05_03:07:02Z
+todo.md:
+  type: file
+  mtime: 2025-05-10_17:13:30Z
+wifi_ap_config/access_point.md:
+  type: file
+  mtime: 2025-05-06_13:55:53Z
+wifi_ap_config/boot-wifi-setup.service:
+  type: file
+  mtime: 2025-05-06_14:40:05Z
+wifi_ap_config/boot_wifi_setup.py:
+  type: file
+  mtime: 2025-05-06_14:43:49Z
+wifi_ap_config/flask_cgi_backend.exec.py:
+  type: file
+  mtime: 2025-05-06_13:23:19Z
+wifi_ap_config/README.md:
+  type: file
+  mtime: 2026-03-07_01:11:39Z
+wifi_ap_config/README_YAML_CONFIG.md:
+  type: file
+  mtime: 2025-05-06_15:15:30Z
+wifi_ap_config/static/index.html:
+  type: file
+  mtime: 2025-05-06_13:24:51Z
+wifi_ap_config/wifi_config.conf:
+  type: file
+  mtime: 2025-05-06_13:11:25Z
+wifi_ap_config/wifi_config.py:
+  type: file
+  mtime: 2025-05-06_09:45:39Z
+wifi_ap_config/wifi_networks_example.yaml:
+  type: file
+  mtime: 2025-05-06_15:15:26Z
+wifi_ap_config/wifi_txt_example.txt:
+  type: file
+  mtime: 2025-05-06_14:39:10Z
+wifi_ap_config/wifi_yaml_config.py:
+  type: file
+  mtime: 2025-05-06_15:31:08Z

@@ -30,6 +30,8 @@ Options:
   --skip-link   ignore changes in symlink files
 '''
 
+version = 2.5
+
 from docopt import docopt # pip3 install docopt
 from file_comparator import *
 from pprint import *

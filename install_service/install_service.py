@@ -10,7 +10,7 @@ import logging
 import sys
 import file_comparator
 
-version = 2.2
+version = 2.5
 
 usage = '''
 Usage: install_service.py --dir=PATH --store=FILE [--log-level=LEVEL]
