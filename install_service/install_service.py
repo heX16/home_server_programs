@@ -15,7 +15,7 @@ Usage: install_service.py --dir=PATH --store=FILE
 
 Options:
   --dir=PATH    path to directory from copy service file
-  --store=FILE  name of YAML file where stored files info [default: service_list.yaml]
+  --store=FILE  name of YAML file where stored files info
 '''
 
 some_notes = '''
