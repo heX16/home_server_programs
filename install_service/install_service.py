@@ -6,16 +6,19 @@ from pprint import pprint
 from subprocess import run, PIPE
 from pathlib import Path
 from typing import Union
+import logging
+import sys
 import file_comparator
 
 version = 2.2
 
 usage = '''
-Usage: install_service.py --dir=PATH --store=FILE
+Usage: install_service.py --dir=PATH --store=FILE [--log-level=LEVEL]
 
 Options:
   --dir=PATH    path to directory from copy service file
   --store=FILE  name of YAML file where stored files info
+  --log-level=LEVEL  log level [default: WARNING]
 '''
 
 some_notes = '''
@@ -51,6 +54,28 @@ In **ansible**, I would have to make a combination of the modules: `copy`,
 [Ansible Documentation](https://docs.ansible.com/ansible/latest/collections/ansible/builtin/)
 '''
 
+log = logging.getLogger('hspro.install_service')
+
+def setup_logging(level_str: str) -> None:
+    # journald is timestamping each entry; keep log lines compact and stderr-based.
+    level_name = str(level_str).upper().strip()
+    level = getattr(logging, level_name, None)
+    if not isinstance(level, int):
+        level = logging.WARNING
+
+    log.handlers = []
+    log.setLevel(level)
+    log.propagate = False
+
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setLevel(level)
+    handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+    log.addHandler(handler)
+
+    if str(level_str).upper().strip() not in dir(logging):
+        # Emit after configuration so it is guaranteed to appear under systemd.
+        log.warning('Invalid --log-level value: %s. Using WARNING.', level_str)
+
 def sh(command: str, *params):
     """
     Run shell command with provided params. Compatible with Python 3.6.
@@ -58,18 +83,17 @@ def sh(command: str, *params):
     c = None
     try:
         cmd_formatted = command.format(*params)
-        print('Run:', cmd_formatted)
+        log.warning('Run: %s', cmd_formatted)
         # Capture output for c.stdout and c.stderr
         c = run(cmd_formatted, shell=True, stdout=PIPE, stderr=PIPE, universal_newlines=True)
         if c is not None and c.stdout and c.returncode != 0:
-            print(c.stdout)
+            log.error('%s', c.stdout)
     except FileNotFoundError:
-        print('Error: FileNotFound. Command: "' + command + '"')
+        log.error('Error: FileNotFound. Command: "%s"', command)
     except Exception as e:
-        print('Error: ' + str(type(e)) + '. Command: "' + command + '"')
+        log.exception('Error: %s. Command: "%s"', type(e), command)
         if c is not None and c.stderr:
-            print('Output:')
-            print(c.stderr)
+            log.error('Output:\n%s', c.stderr)
 
 
 def parse_service_file_WIP(self, file_path: Path):
@@ -90,7 +114,7 @@ def parse_service_file_WIP(self, file_path: Path):
                 elif line.strip().startswith('install_service_start='):
                     start = line.split('=')[1].strip().lower() == 'true'
     except Exception as e:
-        print(f'Error parsing file {file_path}: {e}')
+        log.error('Error parsing file %s: %s', file_path, e)
 
     return service_type, enable, start
 
@@ -186,7 +210,7 @@ class FileEventsSystemd:
     def file_added(self, path):
         file_name = Path('/'.join(path))
         unit_type = systemd_file_type(file_name)
-        print('Added:', file_name)
+        log.warning('Added: %s', file_name)
 
         timer_file = service_has_timer(file_name)
 
@@ -203,7 +227,7 @@ class FileEventsSystemd:
     def file_removed(self, path):
         file_name = '/'.join(path)
         unit_type = systemd_file_type(Path(file_name))
-        print('Removed:', file_name)
+        log.warning('Removed: %s', file_name)
 
         if systemd_file_supports_start(unit_type):
             sh('sudo systemctl stop {0}', file_name)
@@ -216,7 +240,7 @@ class FileEventsSystemd:
     def file_changed(self, path):
         file_name = '/'.join(path)
         unit_type = systemd_file_type(Path(file_name))
-        print('Changed:', file_name)
+        log.warning('Changed: %s', file_name)
 
         timer_file = service_has_timer(Path(file_name))
 
@@ -235,7 +259,7 @@ class FileEventsSystemd:
 
     def file_changed_store_error(self, path):
         file_name = '/'.join(path)
-        print('Store error:', file_name)
+        log.error('Store error: %s', file_name)
 
 
 class FileStoreComparatorAutoSave(file_comparator.FileStoreComparator):
@@ -249,9 +273,11 @@ class FileStoreComparatorAutoSave(file_comparator.FileStoreComparator):
 def main():
     options = docopt(usage)
 
-    print('Starting systemd service manager.')
-    print('Install systemd. Ver:', version)
-    print('lib: file_comparator. Ver:', file_comparator.version)
+    setup_logging(options['--log-level'])
+
+    log.info('Starting systemd service manager.')
+    log.info('Install systemd. Ver: %s', version)
+    log.info('lib: file_comparator. Ver: %s', file_comparator.version)
     event = FileEventsSystemd()
     event.dir = options['--dir']
     store_cmp = FileStoreComparatorAutoSave(options['--store'], options['--dir'])
@@ -262,7 +288,7 @@ def main():
     store_cmp.on_filter = event.file_filter
     store_cmp.compare()
 
-    print('End.')
+    log.info('End.')
 
 
 if __name__ == '__main__':

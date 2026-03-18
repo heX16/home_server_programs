@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # coding: utf-8
 
 '''
@@ -17,13 +17,14 @@ dirs:     # дириктории для отслеживания.
 '''
 
 usage = '''
-Usage: watcher.py --config=YAML_CFG [--dir=PATH] [--store=FILE] [--ext=EXT] [--daemon] [--scantime=SECOND] [--skip-link]
+Usage: watcher.py --config=YAML_CFG [--dir=PATH] [--store=FILE] [--ext=EXT] [--log-level=LEVEL] [--daemon] [--scantime=SECOND] [--skip-link]
 
 Options:
   --config=YAML_CFG   YAML config where desc. action on file/dir changes [default: watcher_config.yaml]
   --dir=PATH    path to directory from copy service file
   --store=FILE  name of YAML file where stored files info [default: watcher_store.yaml]
   --ext=EXT     extension of service [default: *]
+  --log-level=LEVEL  log level [default: WARNING]
   --daemon      run to infinity loop (by default run once and end)
   --scantime=SECOND   scan interval (for daemon) [default: 60]
   --skip-link   ignore changes in symlink files
@@ -34,27 +35,50 @@ from file_comparator import *
 from pprint import *
 from subprocess import *
 from pathlib import Path
+import logging
 import oyaml as yaml
 import shutil # chown
 import os # chmod, islink
+import sys
 import time
 
 from watchdog.observers import Observer # pip3 install watchdog
 from watchdog.events import FileSystemEventHandler
+
+log = logging.getLogger('hspro.file_watcher')
+
+def setup_logging(level_str: str) -> None:
+  # journald is timestamping each entry; keep log lines compact and stderr-based.
+  level_name = str(level_str).upper().strip()
+  level = getattr(logging, level_name, None)
+  if not isinstance(level, int):
+    level = logging.WARNING
+
+  log.handlers = []
+  log.setLevel(level)
+  log.propagate = False
+
+  handler = logging.StreamHandler(sys.stderr)
+  handler.setLevel(level)
+  handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+  log.addHandler(handler)
+
+  if str(level_str).upper().strip() not in dir(logging):
+    # Emit after configuration so it is guaranteed to appear under systemd.
+    log.warning('Invalid --log-level value: %s. Using WARNING.', level_str)
 
 def shell(command: str):
   try:
     c = None
     c = run(command, shell=True)
     if c!=None and c.stdout!='' and isinstance(c.stdout,str):
-      print(c.stdout)
+      log.info(c.stdout)
   except FileNotFoundError as e:
-    print("Error: FileNotFound. Command: \"" + command + "\"")
+    log.error('Error: FileNotFound. Command: "%s"', command)
   except Exception as e:
-    print("Error: " + type(e) + ". Command: \"" + command + "\"")
+    log.exception('Error: %s. Command: "%s"', type(e), command)
     if c!=None and c.stderr!='' and isinstance(c.stderr,str):
-      print("Output:")
-      print(c.stderr)
+      log.error('Output:\n%s', c.stderr)
 
 class FileStoreComparator2(FileStoreComparator):
 
@@ -84,27 +108,27 @@ class FileStoreComparator2(FileStoreComparator):
     # find in dirs
     for config_path, config_cmd in self.config['dirs'].items():
       if path_str[:len(config_path)] == config_path:
-        print('Dir changed: ' + config_path)
+        log.warning('Dir changed: %s', config_path)
         self.activate_cmd(config_cmd)
       # special mode - any change in targetdir
       if config_path == '.':
-        print('Dir changed: ' + self.targetdir)
+        log.warning('Dir changed: %s', self.targetdir)
         self.activate_cmd(config_cmd)
 
   def event_file_added(self, path):
-    print('Added: ' + "/".join(path))
+    log.warning('Added: %s', "/".join(path))
     self.detect_watch_event(path)
 
   def event_file_removed(self, path):
-    print('Removed: ' + "/".join(path))
+    log.warning('Removed: %s', "/".join(path))
     self.detect_watch_event(path)
 
   def event_file_changed(self, path):
-    print('Changed: ' + "/".join(path))
+    log.warning('Changed: %s', "/".join(path))
     self.detect_watch_event(path)
 
   def event_file_changed_store_error(self, path):
-    print('Store error:' + "/".join(path))
+    log.error('Store error:%s', "/".join(path))
 
   def event_filter(self, path, isdir):
     #todo: __pycache__ - is hardcoded, add options or config for this.
@@ -121,10 +145,10 @@ class FileStoreComparator2(FileStoreComparator):
     with open(filename, 'r', encoding='utf8') as stream:
         self.config = yaml.safe_load(stream)
         if self.config['files'] == None:
-            print('WARN: "files:" section is empty')
+            log.warning('WARN: "files:" section is empty')
             self.config['files'] = {}
         if self.config['dirs'] == None:
-            print('WARN: "dirs:" section is empty')
+            log.warning('WARN: "dirs:" section is empty')
             self.config['dirs'] = {}
     self.run_commands = dict.fromkeys(self.config['commands'].keys(), False)
 
@@ -134,7 +158,7 @@ class FileStoreComparator2(FileStoreComparator):
     for k,v in self.run_commands.items():
       if v:
         self.run_commands[k] = False
-        print('run: ' + k)
+        log.warning('run: %s', k)
         shell(self.config['commands'][k])
 
     #todo: add options
@@ -167,6 +191,7 @@ class FlagEventHandler(FileSystemEventHandler):
 def main():
   # параметры
   options = docopt(usage)
+  setup_logging(options['--log-level'])
 
   # debug:
   #options['--dir'] = 'D:\\Sync\\House0-programs'
