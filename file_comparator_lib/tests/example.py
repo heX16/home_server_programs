@@ -34,7 +34,7 @@ class FileStoreComparator2(FileStoreComparator):
     print('Store error:', path.as_posix())
 
   def event_filter(self, path: Path, isdir: bool) -> bool:
-    if (isdir and '__pycache__' in path.parts) or (not isdir and path.name in self.ignore_list):
+    if (isdir and '__pycache__' in path.parts) or (isdir and '.git' in path.parts) or (not isdir and path.name in self.ignore_list):
       return False
     else:
       return True
