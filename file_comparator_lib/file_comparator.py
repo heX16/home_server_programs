@@ -15,6 +15,12 @@ TODO:
     все file_name/path переделать с list/string на Path.
 
 TODO:
+    В YAML ключи путей разбиваются по '/', т.е. ожидается POSIX-разделитель.
+    На Windows (обратные слэши) это может давать несостыковки: сканер файлов
+    берет имена из glob/os, а они зависят от платформы. Нужна нормализация путей
+    (единый формат для store и для файловой системы).
+
+TODO:
 
 сделать обработчик событий - логгер изменений. Создает список изменений которые были обнаруженны при запуске FileStoreComparator.
 с последующей возможностью запуска процедур "event_*" идентичных FileStoreComparator, но которые вызываются из переданного списка.
@@ -175,10 +181,13 @@ class FileStoreComparator:
     self.recursion = True
     self._store_root = None
 
-  def on_store_updated(self, path: list):
+  def on_store_updated(self, change_type: str, key: str) -> None:
     """
     Hook called right after the store is mutated.
     Override in subclasses (default: do nothing).
+
+    :param change_type: One of: 'added', 'removed', 'updated', 'store_error'.
+    :param key: POSIX-like key (e.g. 'dir/file.ext') identifying the changed entry.
     """
     pass
 
@@ -255,7 +264,7 @@ class FileStoreComparator:
       if datech==None:
         # present in 'store', none in 'files' - file removed
         del store[f]
-        self.on_store_updated(path+[f])
+        self.on_store_updated('removed', '/'.join(path+[f]))
         self.event_file_removed(path+[f])
       # if isinstance... type(datech)!=type(v) ... - file_to_dir, dir_to_file....
       else:
@@ -273,20 +282,20 @@ class FileStoreComparator:
         if datech > v:
           # present in 'store' and 'files' by datetime changed
           store[f]=datech
-          self.on_store_updated(path+[f])
+          self.on_store_updated('updated', '/'.join(path+[f]))
           self.event_file_changed(path+[f])
         else:
           if datech < v:
             # present in 'store' and 'files' by datetime changed, but not correct
             store[f]=datech
-            self.on_store_updated(path+[f])
+            self.on_store_updated('store_error', '/'.join(path+[f]))
             self.event_file_changed_store_error(path+[f])
     # end _for_ in store
 
     # enum lefted 'files' - added files.
     for k,v in files.items():
       store.update({k:v})
-      self.on_store_updated(path+[k])
+      self.on_store_updated('added', '/'.join(path+[k]))
       self.event_file_added(path+[k])
 
 
