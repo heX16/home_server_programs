@@ -6,7 +6,9 @@ import datetime
 import time
 import glob
 import os
+from pathlib import Path
 from pprint import *
+from typing import Union
 
 
 """
@@ -134,11 +136,11 @@ def time_trim_ms(t: datetime.datetime):
   return datetime.datetime(t.year, t.month, t.day, t.hour, t.minute, t.second)
 
 
-def epoch_from_mtime(path: str) -> int:
+def epoch_from_mtime(path: Union[str, Path]) -> int:
   """
   Return file mtime in whole seconds since epoch.
   """
-  return int(os.path.getmtime(path))
+  return int(Path(path).stat().st_mtime)
 
 
 def epoch_to_fss(ts: int) -> str:
@@ -156,21 +158,21 @@ def fss_to_epoch(ts: str) -> int:
   dt = datetime.datetime.strptime(ts, '%Y-%m-%d_%H:%M:%SZ')
   return int(dt.replace(tzinfo=datetime.timezone.utc).timestamp())
 
-def GetFileContent(fileName, encoding='utf-8'):
+def GetFileContent(fileName: Union[str, Path], encoding: str = 'utf-8'):
   """ возвращает строку с текстовым содержимым файла (в нужной кодировке) """
   try:
-    with open(fileName,'r', encoding=encoding) as f:
+    with open(Path(fileName), 'r', encoding=encoding) as f:
       return str(f.read())
   except IOError:
     return ''
 
 class FileStoreComparator:
 
-  def __init__(self, store_file: str, targetdir = '.\\'):
-    self.store_file = store_file
+  def __init__(self, store_file: Union[str, Path], targetdir: Union[str, Path] = '.\\'):
+    self.store_file = Path(store_file)
     self.encoding='utf-8'
     #todo: normalize path. Example: targetdir='/etc', targetdir='etc', targetdir='/etc/'
-    self.targetdir  = targetdir # watching directory
+    self.targetdir = Path(targetdir) # watching directory
     self.searchmask = '*'
     self.file_extension = '*'
     self.on_added = None
@@ -191,60 +193,57 @@ class FileStoreComparator:
     """
     pass
 
-  def get_file_list_and_date(self, targetdir, path):
+  def get_file_list_and_date(self, targetdir: Path, path: Path):
     ''' Получить список всех файлов и даты их модификации.
     Возвращает дерево из dict.
-    TODO: в процессе работы делает смену каталогов - хороший алгоритм должен работать без смены каталогов, но пока сгодится и так.
     '''
     r = {}
-    olddir = os.getcwd()
-    try:
-      os.chdir(targetdir)
-      for f in glob.glob(self.searchmask):
-        if os.path.isfile(f):
-          if self.file_extension=='*' or os.path.splitext(f)[1][1:]==self.file_extension:
-            if self.event_filter(path+[f], False):
-              # add file to file list (store epoch seconds)
-              r.update({f: epoch_from_mtime(f)})
+    for entry in targetdir.glob(self.searchmask):
+      entry_name = entry.name
+      rel_path = path / entry_name
 
-        if os.path.isdir(f) and self.recursion and self.event_filter(path+[f], True):
-          dirlist = self.get_file_list_and_date(f, path+[f]) # <- RECURSION!
-          if dirlist != {}:
-            # add dir to file list
-            r.update({f: dirlist })
-    finally:
-      os.chdir(olddir)
+      if entry.is_file():
+        if self.file_extension == '*' or entry.suffix[1:] == self.file_extension:
+          if self.event_filter(rel_path, False):
+            # add file to file list (store epoch seconds)
+            r.update({entry_name: epoch_from_mtime(entry)})
+
+      if entry.is_dir() and self.recursion and self.event_filter(rel_path, True):
+        dirlist = self.get_file_list_and_date(entry, rel_path) # <- RECURSION!
+        if dirlist != {}:
+          # add dir to file list
+          r.update({entry_name: dirlist})
     return r
 
-  def event_filter(self, path, isdir):
+  def event_filter(self, path: Path, isdir: bool) -> bool:
     # see also: https://pypi.org/project/igittigitt/
     if callable(self.on_filter):
       return self.on_filter(path, isdir)
     else:
       return True
 
-  def event_file_added(self, path):
+  def event_file_added(self, path: Path) -> None:
     if callable(self.on_added):
       self.on_added(path)
 
-  def event_file_removed(self, path):
+  def event_file_removed(self, path: Path) -> None:
     if callable(self.on_removed):
       self.on_removed(path)
 
-  def event_file_changed(self, path):
+  def event_file_changed(self, path: Path) -> None:
     if callable(self.on_changed):
       self.on_changed(path)
 
-  def event_file_changed_store_error(self, path):
+  def event_file_changed_store_error(self, path: Path) -> None:
     if callable(self.on_changed_store_error):
       self.on_changed_store_error(path)
 
-  def compare_list(self, store: dict, files: dict, path: list):
+  def compare_list(self, store: dict, files: dict, path: Path):
     '''
     in-out param:
       'store' dict be changed to actual state!
       'files' dict be changed!
-      `path` - LIST!!! - Need change to `Path`
+      `path` - relative `Path` within watched directory.
     '''
 
     # enum 'store' and find in 'files'
@@ -255,7 +254,7 @@ class FileStoreComparator:
 
       # compare dir
       if self.recursion and isinstance(datech, dict) and isinstance(v, dict):
-        self.compare_list(v, datech, path+[f]) # <- RECURSION
+        self.compare_list(v, datech, path / f) # <- RECURSION
         # remove from 'files' list - nedded for next comparsion step.
         del files[f]
         continue
@@ -264,8 +263,9 @@ class FileStoreComparator:
       if datech==None:
         # present in 'store', none in 'files' - file removed
         del store[f]
-        self.on_store_updated('removed', '/'.join(path+[f]))
-        self.event_file_removed(path+[f])
+        rel = path / f
+        self.on_store_updated('removed', rel.as_posix())
+        self.event_file_removed(rel)
       # if isinstance... type(datech)!=type(v) ... - file_to_dir, dir_to_file....
       else:
         #todo: WIP! (WTF??? - я забыл что это)
@@ -282,21 +282,24 @@ class FileStoreComparator:
         if datech > v:
           # present in 'store' and 'files' by datetime changed
           store[f]=datech
-          self.on_store_updated('updated', '/'.join(path+[f]))
-          self.event_file_changed(path+[f])
+          rel = path / f
+          self.on_store_updated('updated', rel.as_posix())
+          self.event_file_changed(rel)
         else:
           if datech < v:
             # present in 'store' and 'files' by datetime changed, but not correct
             store[f]=datech
-            self.on_store_updated('store_error', '/'.join(path+[f]))
-            self.event_file_changed_store_error(path+[f])
+            rel = path / f
+            self.on_store_updated('store_error', rel.as_posix())
+            self.event_file_changed_store_error(rel)
     # end _for_ in store
 
     # enum lefted 'files' - added files.
     for k,v in files.items():
       store.update({k:v})
-      self.on_store_updated('added', '/'.join(path+[k]))
-      self.event_file_added(path+[k])
+      rel = path / k
+      self.on_store_updated('added', rel.as_posix())
+      self.event_file_added(rel)
 
 
   def load_store(self):
@@ -324,7 +327,7 @@ class FileStoreComparator:
   def compare(self):
     store = self.load_store()
     self._store_root = store
-    files = self.get_file_list_and_date(self.targetdir, [])
-    self.compare_list(store, files, [])
+    files = self.get_file_list_and_date(self.targetdir, Path())
+    self.compare_list(store, files, Path())
     self.save_store(store)
 

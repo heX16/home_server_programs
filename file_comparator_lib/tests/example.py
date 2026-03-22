@@ -1,11 +1,11 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # coding: utf-8
 
 usage = '''
 Usage: watch.py [--dir=PATH] [--store=FILE] [--ext=EXT]
 
 Options:
-  --dir=PATH    path to directory from copy service file
+  --dir=PATH    path to directory to compare [default: .]
   --store=FILE  name of YAML file where stored files info [default: service_list.yaml]
   --ext=EXT     extension of service [default: *]
 '''
@@ -20,37 +20,39 @@ class FileStoreComparator2(FileStoreComparator):
 
   def __init__(self, store_file: str, targetdir = '.\\'):
     super().__init__(store_file, targetdir)
-    self.ignore_list = [] # NOTE: скрывает указанный файл в каждой дире!!! - это поведение надобы пофиксить но нет времени...
+    self.ignore_list = [] # NOTE: hides the file in every directory; should be fixed but not now.
 
-  def event_file_added(self, path):
-    print('Added:', "/".join(path))
+  def event_file_added(self, path: Path) -> None:
+    print('Added:', path.as_posix())
 
-  def event_file_removed(self, path):
-    print('Removed:', "/".join(path))
+  def event_file_removed(self, path: Path) -> None:
+    print('Removed:', path.as_posix())
 
-  def event_file_changed(self, path):
-    print('Changed:', "/".join(path))
+  def event_file_changed(self, path: Path) -> None:
+    print('Changed:', path.as_posix())
 
-  def event_file_changed_store_error(self, path):
-    print('Store error:', "/".join(path))
+  def event_file_changed_store_error(self, path: Path) -> None:
+    print('Store error:', path.as_posix())
 
-  def event_filter(self, path, isdir):
-    if (isdir and '__pycache__' in path) or (not isdir and path[-1] in self.ignore_list):
+  def event_filter(self, path: Path, isdir: bool) -> bool:
+    if (isdir and '__pycache__' in path.parts) or (not isdir and path.name in self.ignore_list):
       return False
     else:
       return True
 
 def main():
-  # параметры
+  # Parameters
   options = docopt(usage)
 
-  # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  #options['--dir'] = 'D:\\Sync\\House0-programs'
-  #options['--store'] = 'D:\\Sync\\House0-programs\\file_watcher\\service_list.yaml'
+  # Example:
+  # options['--dir'] = 'D:\\Sync\\House0-programs'
+  # options['--store'] = 'D:\\Sync\\House0-programs\\file_watcher\\service_list.yaml'
 
-  store_cmp = FileStoreComparator2(options['--store'], options['--dir'])
+  store_file = Path(options['--store'])
+  target_dir = options['--dir'] or '.'
+  store_cmp = FileStoreComparator2(store_file, target_dir)
   store_cmp.file_extension = options['--ext']
-  store_cmp.ignore_list = [Path(options['--store']).name]
+  store_cmp.ignore_list = [store_file.name]
 
   store_cmp.compare()
 
