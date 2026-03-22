@@ -32,26 +32,26 @@ def sh(command: str, *params):
 
 
 class FileEventsCrond:
-  def file_added(self, path):
-    file_name = '/'.join(path)
+  def file_added(self, path: Path) -> None:
+    file_name = path.as_posix()
     print('Added:', file_name)
     sh('cp {1}{0} /etc/cron.d/', file_name, self.dir)
     sh('sudo systemctl reload-or-restart cron.service')
 
-  def file_removed(self, path):
-    file_name = '/'.join(path)
+  def file_removed(self, path: Path) -> None:
+    file_name = path.as_posix()
     print('Removed:', file_name)
     sh('rm /etc/cron.d/{0}', file_name)
     sh('sudo systemctl reload-or-restart cron.service')
 
-  def file_changed(self, path):
-    file_name = '/'.join(path)
+  def file_changed(self, path: Path) -> None:
+    file_name = path.as_posix()
     print('Changed:', file_name)
     sh('cp {1}{0} /etc/cron.d/', file_name, self.dir)
     sh('sudo systemctl reload-or-restart cron.service')
 
-  def file_changed_store_error(self, path):
-    file_name = '/'.join(path)
+  def file_changed_store_error(self, path: Path) -> None:
+    file_name = path.as_posix()
     print('Store error:', file_name)
     sh('sudo systemctl reload-or-restart cron.service')
 

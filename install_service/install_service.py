@@ -202,63 +202,62 @@ class FileEventsSystemd:
     """
 
 
-    def file_filter(self, path, isdir) -> bool:
+    def file_filter(self, path: Path, isdir: bool) -> bool:
         # TODO: implement suffix-based filtering as needed.
-        file_name = '/'.join(path)
         return True
 
-    def file_added(self, path):
-        file_name = Path('/'.join(path))
+    def file_added(self, path: Path) -> None:
+        file_name = path
         unit_type = systemd_file_type(file_name)
         log.warning('Added: %s', file_name)
 
         timer_file = service_has_timer(file_name)
 
-        sh('cp {0} /etc/systemd/system/', str(Path(self.dir) / file_name))
+        sh('cp {0} /etc/systemd/system/', str(self.dir / file_name))
 
         if timer_file == False:
             if systemd_file_supports_enable(unit_type):
-                sh('sudo systemctl --quiet enable {0}', str(file_name))
+                sh('sudo systemctl --quiet enable {0}', file_name.as_posix())
             if systemd_file_supports_start(unit_type):
-                sh('sudo systemctl start {0}', str(file_name))
+                sh('sudo systemctl start {0}', file_name.as_posix())
         else:
-            sh('sudo systemctl start {0}', str(timer_file))
+            sh('sudo systemctl start {0}', timer_file.as_posix())
 
-    def file_removed(self, path):
-        file_name = '/'.join(path)
-        unit_type = systemd_file_type(Path(file_name))
+    def file_removed(self, path: Path) -> None:
+        file_name = path
+        unit_type = systemd_file_type(file_name)
         log.warning('Removed: %s', file_name)
 
         if systemd_file_supports_start(unit_type):
-            sh('sudo systemctl stop {0}', file_name)
+            sh('sudo systemctl stop {0}', file_name.as_posix())
         if systemd_file_supports_enable(unit_type):
-            sh('sudo systemctl --quiet disable {0}', file_name)
-        sh('rm /etc/systemd/system/{0}', file_name)
+            sh('sudo systemctl --quiet disable {0}', file_name.as_posix())
+        sh('rm /etc/systemd/system/{0}', file_name.as_posix())
         sh('sudo systemctl daemon-reload')
         sh('sudo systemctl reset-failed')
 
-    def file_changed(self, path):
-        file_name = '/'.join(path)
-        unit_type = systemd_file_type(Path(file_name))
+    def file_changed(self, path: Path) -> None:
+        file_name = path
+        unit_type = systemd_file_type(file_name)
         log.warning('Changed: %s', file_name)
 
-        timer_file = service_has_timer(Path(file_name))
+        timer_file = service_has_timer(file_name)
 
         if systemd_file_supports_start(unit_type):
-            sh('sudo systemctl stop {0}', file_name)
-        sh('cp {0} /etc/systemd/system/', str(Path(self.dir) / file_name))
+            sh('sudo systemctl stop {0}', file_name.as_posix())
+        sh('cp {0} /etc/systemd/system/', str(self.dir / file_name))
         sh('sudo systemctl daemon-reload')
 
         if timer_file == False:
             if systemd_file_supports_enable(unit_type):
-                sh('sudo systemctl --quiet enable {0}', str(file_name))
+                sh('sudo systemctl --quiet enable {0}', file_name.as_posix())
             if systemd_file_supports_start(unit_type):
-                sh('sudo systemctl start {0}', str(file_name))
+                sh('sudo systemctl start {0}', file_name.as_posix())
         else:
-            sh('sudo systemctl start {0}', str(timer_file))
+            sh('sudo systemctl start {0}', timer_file.as_posix())
 
-    def file_changed_store_error(self, path):
-        file_name = '/'.join(path)
+    def file_changed_store_error(self, path: Path) -> None:
+        file_name = path
         log.error('Store error: %s', file_name)
 
 
@@ -279,7 +278,7 @@ def main():
     log.info('Install systemd. Ver: %s', version)
     log.info('lib: file_comparator. Ver: %s', file_comparator.version)
     event = FileEventsSystemd()
-    event.dir = options['--dir']
+    event.dir = Path(options['--dir'])
     store_cmp = FileStoreComparatorAutoSave(options['--store'], options['--dir'])
     store_cmp.on_added = event.file_added
     store_cmp.on_removed = event.file_removed

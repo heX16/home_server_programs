@@ -84,7 +84,7 @@ def shell(command: str):
 
 class FileStoreComparator2(FileStoreComparator):
 
-  def __init__(self, store_file: str, targetdir = '.\\'):
+  def __init__(self, store_file: str, targetdir: str = '.\\'):
     super().__init__(store_file, targetdir)
     self.config_path = '' # path to config for reload on change
     self.ignore_list = [] # NOTE: скрывает указанный файл в каждой дире!!! - это поведение надобы пофиксить но нет времени...
@@ -98,8 +98,8 @@ class FileStoreComparator2(FileStoreComparator):
       if c in self.run_commands:
         self.run_commands[c] = True
 
-  def detect_watch_event(self, path):
-    path_str = "/".join(path)
+  def detect_watch_event(self, path: Path) -> None:
+    path_str = path.as_posix()
     # reload config file
     if path_str == self.config_path:
       self.load_config(self.config_path)
@@ -117,27 +117,31 @@ class FileStoreComparator2(FileStoreComparator):
         log.warning('Dir changed: %s', self.targetdir)
         self.activate_cmd(config_cmd)
 
-  def event_file_added(self, path):
-    log.warning('Added: %s', "/".join(path))
+  def event_file_added(self, path: Path) -> None:
+    log.warning('Added: %s', path.as_posix())
     self.detect_watch_event(path)
 
-  def event_file_removed(self, path):
-    log.warning('Removed: %s', "/".join(path))
+  def event_file_removed(self, path: Path) -> None:
+    log.warning('Removed: %s', path.as_posix())
     self.detect_watch_event(path)
 
-  def event_file_changed(self, path):
-    log.warning('Changed: %s', "/".join(path))
+  def event_file_changed(self, path: Path) -> None:
+    log.warning('Changed: %s', path.as_posix())
     self.detect_watch_event(path)
 
-  def event_file_changed_store_error(self, path):
-    log.error('Store error:%s', "/".join(path))
+  def event_file_changed_store_error(self, path: Path) -> None:
+    log.error('Store error:%s', path.as_posix())
 
-  def event_filter(self, path, isdir):
+  def event_filter(self, path: Path, isdir: bool) -> bool:
     #todo: __pycache__ - is hardcoded, add options or config for this.
 
     #todo: normalize path in: targetdir + "/" + "/".join(path). Example: targetdir='/etc', targetdir='etc', targetdir='/etc/'...
 
-    if (isdir and '__pycache__' in path) or (not isdir and path[-1] in self.ignore_list) or (self.skip_link and os.path.islink(self.targetdir + "/" + "/".join(path))):
+    if (
+      (isdir and '__pycache__' in path.parts)
+      or (not isdir and path.name in self.ignore_list)
+      or (self.skip_link and (self.targetdir / path).is_symlink())
+    ):
       return False
     else:
       return True
@@ -214,7 +218,7 @@ def main():
     # background process:
     event_handler = FlagEventHandler()
     observer = Observer()
-    observer.schedule(event_handler, store_cmp.targetdir, recursive=True)
+    observer.schedule(event_handler, str(store_cmp.targetdir), recursive=True)
     observer.start()
     try:
       #TODO: correct exit on SIG and etc...
