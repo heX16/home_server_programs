@@ -77,61 +77,6 @@ TODO:
 
 """
 
-def fss_to_tree(fss_map: dict) -> dict:
-  """
-  Convert flat FSS-YAML mapping (path -> metadata) into nested tree.
-  Only entries with type: file and mtime are considered.
-  """
-  tree: dict = {}
-  for full_path, meta in (fss_map or {}).items():
-    if not isinstance(meta, dict):
-      continue
-    if meta.get('type') != 'file':
-      continue
-    mtime_str = meta.get('mtime')
-    if not mtime_str:
-      continue
-    try:
-      mtime_epoch = fss_to_epoch(mtime_str)
-    except Exception:
-      continue
-    parts = [p for p in str(full_path).split('/') if p]
-    if not parts:
-      continue
-    node = tree
-    for part in parts[:-1]:
-      node = node.setdefault(part, {})
-    node[parts[-1]] = mtime_epoch
-  return tree
-
-
-def tree_to_fss(store_tree: dict) -> dict:
-  """
-  Convert nested store tree into flat FSS-YAML mapping (path -> metadata).
-  """
-  fss_map: dict = {}
-
-  def walk(node: dict, prefix: list):
-    for name, value in (node or {}).items():
-      current_path = prefix + [name]
-      if isinstance(value, dict):
-        walk(value, current_path)
-      else:
-        # leaf file: value is epoch seconds
-        try:
-          ts = int(value)
-        except (TypeError, ValueError):
-          continue
-        path_str = '/'.join(current_path)
-        fss_map[path_str] = {
-          'type': 'file',
-          'mtime': epoch_to_fss(ts),
-        }
-
-  walk(store_tree or {}, [])
-  return fss_map
-
-
 def time_trim_ms(t: datetime.datetime):
   return datetime.datetime(t.year, t.month, t.day, t.hour, t.minute, t.second)
 
@@ -173,47 +118,71 @@ class FileStoreComparator:
     self.encoding='utf-8'
     #todo: normalize path. Example: targetdir='/etc', targetdir='etc', targetdir='/etc/'
     self.targetdir = Path(targetdir) # watching directory
-    self.searchmask = '*'
-    self.file_extension = '*'
     self.on_added = None
     self.on_removed = None
     self.on_changed = None
     self.on_changed_store_error = None
     self.on_filter = None
     self.recursion = True
+    self.follow_symlinks = True
     self._store_root = None
 
-  def on_store_updated(self, change_type: str, key: str) -> None:
+  def on_store_updated(self, change_type: str, key: str, values: dict) -> None:
     """
     Hook called right after the store is mutated.
     Override in subclasses (default: do nothing).
 
     :param change_type: One of: 'added', 'removed', 'updated', 'store_error'.
     :param key: POSIX-like key (e.g. 'dir/file.ext') identifying the changed entry.
+    :param values: The store metadata dict for this key (a live reference).
+                   You can mutate it to persist custom fields into YAML.
     """
     pass
 
-  def get_file_list_and_date(self, targetdir: Path, path: Path):
-    ''' Получить список всех файлов и даты их модификации.
-    Возвращает дерево из dict.
-    '''
-    r = {}
-    for entry in targetdir.glob(self.searchmask):
-      entry_name = entry.name
-      rel_path = path / entry_name
+  def _key_to_path(self, key: str) -> Path:
+    """
+    Convert store key to Path suitable for event callbacks.
+    Directory keys end with '/'.
+    """
+    if str(key).endswith('/'):
+      return Path(str(key)[:-1])
+    return Path(str(key))
 
-      if entry.is_file():
-        if self.file_extension == '*' or entry.suffix[1:] == self.file_extension:
-          if self.event_filter(rel_path, False):
-            # add file to file list (store epoch seconds)
-            r.update({entry_name: epoch_from_mtime(entry)})
+  def _normalize_key(self, key: str, meta: dict = None) -> str:
+    """
+    Normalize keys to POSIX style and ensure directory keys end with '/'.
+    """
+    k = str(key or '').strip().replace('\\', '/')
+    while k.startswith('./'):
+      k = k[2:]
+    while '//' in k:
+      k = k.replace('//', '/')
 
-      if entry.is_dir() and self.recursion and self.event_filter(rel_path, True):
-        dirlist = self.get_file_list_and_date(entry, rel_path) # <- RECURSION!
-        if dirlist != {}:
-          # add dir to file list
-          r.update({entry_name: dirlist})
-    return r
+    is_dir = k.endswith('/') or (isinstance(meta, dict) and meta.get('type') == 'dir')
+    if is_dir:
+      k = k.rstrip('/') + '/'
+    else:
+      k = k.rstrip('/')
+    return k
+
+  def _mtime_to_epoch(self, value) -> int:
+    """
+    Convert mtime representation to epoch seconds (int).
+    Accepts FSS string, int, float, or numeric string.
+    """
+    if isinstance(value, int):
+      return int(value)
+    if isinstance(value, float):
+      return int(value)
+    if isinstance(value, str):
+      try:
+        return fss_to_epoch(value)
+      except Exception:
+        try:
+          return int(value)
+        except Exception:
+          return 0
+    return 0
 
   def event_filter(self, path: Path, isdir: bool) -> bool:
     # see also: https://pypi.org/project/igittigitt/
@@ -221,6 +190,41 @@ class FileStoreComparator:
       return self.on_filter(path, isdir)
     else:
       return True
+
+  def get_fs_map(self, targetdir: Path) -> dict:
+    """
+    Scan filesystem and return flat-map: key -> meta dict.
+    - Files: key 'a/b/c.txt', meta {'type': 'file', 'mtime': '<FSS>'}
+    - Dirs:  key 'a/b/c/',   meta {'type': 'dir'}
+    """
+    out: dict = {}
+
+    def scan_dir(abs_dir: Path, rel_dir: Path) -> None:
+      if rel_dir.parts and self.event_filter(rel_dir, True):
+        out[rel_dir.as_posix().rstrip('/') + '/'] = {'type': 'dir'}
+
+      for child in abs_dir.iterdir():
+        rel_path = rel_dir / child.name
+
+        if (not self.follow_symlinks) and child.is_symlink():
+          continue
+
+        if child.is_dir():
+          if (not self.recursion) or (not self.event_filter(rel_path, True)):
+            continue
+          scan_dir(child, rel_path)
+          continue
+
+        if child.is_file():
+          if not self.event_filter(rel_path, False):
+            continue
+          out[rel_path.as_posix()] = {
+            'type': 'file',
+            'mtime': epoch_to_fss(epoch_from_mtime(child)),
+          }
+
+    scan_dir(targetdir.resolve(), Path('.'))
+    return out
 
   def event_file_added(self, path: Path) -> None:
     if callable(self.on_added):
@@ -238,69 +242,92 @@ class FileStoreComparator:
     if callable(self.on_changed_store_error):
       self.on_changed_store_error(path)
 
-  def compare_list(self, store: dict, files: dict, path: Path):
-    '''
-    in-out param:
-      'store' dict be changed to actual state!
-      'files' dict be changed!
-      `path` - relative `Path` within watched directory.
-    '''
+  def _remove_dir_tree(self, store: dict, dir_key: str, keys_under: list = None) -> None:
+    """
+    Remove a directory entry and everything under it from the flat-map store.
 
-    # enum 'store' and find in 'files'
-    # f - file name
-    # v - file data in store
-    for f,v in store.copy().items():
-      datech = files.get(f, None)
+    Directory keys must end with '/' (e.g. 'a/b/c/').
+    Removal events are fired leaf-first (deepest keys first).
+    """
+    dir_key = str(dir_key or '')
+    if not dir_key.endswith('/'):
+      dir_key = dir_key.rstrip('/') + '/'
 
-      # compare dir
-      if self.recursion and isinstance(datech, dict) and isinstance(v, dict):
-        self.compare_list(v, datech, path / f) # <- RECURSION
-        # remove from 'files' list - nedded for next comparsion step.
-        del files[f]
+    if keys_under is None:
+      keys_under = [k for k in store.keys() if k == dir_key or k.startswith(dir_key)]
+      # Leaf-first: remove deepest nodes first.
+      keys_under.sort(key=len, reverse=True)
+    for k in keys_under:
+      values = store.pop(k, None)
+      if values is None:
+        continue
+      self.on_store_updated('removed', k, values)
+      self.event_file_removed(self._key_to_path(k))
+
+  def compare_map(self, store: dict, disk: dict) -> None:
+    """
+    Compare and mutate store (flat-map key -> meta dict) to match disk.
+    This method fires callbacks and calls on_store_updated() after each mutation.
+    """
+    # Pass 1: removed directories (cascade).
+    removed_dirs = [k for k in store.keys() if str(k).endswith('/') and k not in (disk or {})]
+    removed_dirs.sort(key=len, reverse=True)  # deep-first
+
+    for dir_key in removed_dirs:
+      if dir_key not in store:
+        continue
+      self._remove_dir_tree(store, dir_key)
+
+    # Pass 2: removed remaining keys (mostly files).
+    removed_keys = [k for k in store.keys() if k not in disk]
+    removed_keys.sort(key=len, reverse=True)
+    for k in removed_keys:
+      values = store.pop(k, None)
+      if values is None:
+        continue
+      self.on_store_updated('removed', k, values)
+      self.event_file_removed(self._key_to_path(k))
+
+    # Added keys.
+    for k, disk_meta in (disk or {}).items():
+      if k in store:
+        continue
+      values = dict(disk_meta) if isinstance(disk_meta, dict) else {}
+      store[k] = values
+      self.on_store_updated('added', k, values)
+      self.event_file_added(self._key_to_path(k))
+
+    # Updated/store_error for files.
+    for k, disk_meta in (disk or {}).items():
+      if k not in store:
+        continue
+      if k.endswith('/'):
+        # Existence-only for directories.
         continue
 
-      # compare files
-      if datech==None:
-        # present in 'store', none in 'files' - file removed
-        del store[f]
-        rel = path / f
-        self.on_store_updated('removed', rel.as_posix())
-        self.event_file_removed(rel)
-      # if isinstance... type(datech)!=type(v) ... - file_to_dir, dir_to_file....
-      else:
-        #todo: WIP! (WTF??? - я забыл что это)
-        if isinstance(datech, dict):
-          continue
+      if not isinstance(disk_meta, dict):
+        continue
+      if disk_meta.get('type') != 'file':
+        continue
 
-        # present in 'store' and 'files'.
-        # remove from 'files' list - nedded for next comparsion step.
-        del files[f]
-        # analize time.
-        # DEBUG:
-        #print('data in disk ', datech)
-        #print('data in store', v)
-        if datech > v:
-          # present in 'store' and 'files' by datetime changed
-          store[f]=datech
-          rel = path / f
-          self.on_store_updated('updated', rel.as_posix())
-          self.event_file_changed(rel)
-        else:
-          if datech < v:
-            # present in 'store' and 'files' by datetime changed, but not correct
-            store[f]=datech
-            rel = path / f
-            self.on_store_updated('store_error', rel.as_posix())
-            self.event_file_changed_store_error(rel)
-    # end _for_ in store
+      store_meta = store.get(k, {})
+      if not isinstance(store_meta, dict):
+        store_meta = {}
+        store[k] = store_meta
 
-    # enum lefted 'files' - added files.
-    for k,v in files.items():
-      store.update({k:v})
-      rel = path / k
-      self.on_store_updated('added', rel.as_posix())
-      self.event_file_added(rel)
+      disk_epoch = self._mtime_to_epoch(disk_meta.get('mtime'))
+      store_epoch = self._mtime_to_epoch(store_meta.get('mtime'))
 
+      if disk_epoch > store_epoch:
+        store_meta.setdefault('type', 'file')
+        store_meta['mtime'] = disk_meta.get('mtime')
+        self.on_store_updated('updated', k, store_meta)
+        self.event_file_changed(self._key_to_path(k))
+      elif disk_epoch < store_epoch:
+        store_meta.setdefault('type', 'file')
+        store_meta['mtime'] = disk_meta.get('mtime')
+        self.on_store_updated('store_error', k, store_meta)
+        self.event_file_changed_store_error(self._key_to_path(k))
 
   def load_store(self):
     try:
@@ -312,14 +339,28 @@ class FileStoreComparator:
       # TODO: except - нужна более обширная обработка.
       print('I/O error({0}): {1}'.format(e.errno, e.strerror))
       raw = {}
-    # raw is FSS-YAML flat mapping; convert to internal tree.
-    store_tree = fss_to_tree(raw)
-    return store_tree
+    if not isinstance(raw, dict):
+      raw = {}
+
+    store_map: dict = {}
+    for key, meta in raw.items():
+      if isinstance(meta, dict):
+        values = meta
+      elif isinstance(meta, int):
+        values = {'type': 'file', 'mtime': epoch_to_fss(meta)}
+      elif isinstance(meta, str):
+        values = {'type': 'file', 'mtime': meta}
+      else:
+        continue
+
+      norm_key = self._normalize_key(key, values)
+      values.setdefault('type', 'dir' if norm_key.endswith('/') else 'file')
+      store_map[norm_key] = values
+
+    return store_map
 
   def save_store(self, store):
-    # Convert internal tree to FSS-YAML flat mapping.
-    fss_map = tree_to_fss(store or {})
-    data = yaml.dump(fss_map, default_flow_style=False, allow_unicode=True)
+    data = yaml.dump(store or {}, default_flow_style=False, allow_unicode=True)
     if GetFileContent(self.store_file, encoding=self.encoding) != data:
       with open(self.store_file, 'w', encoding=self.encoding) as f:
         f.write(data)
@@ -327,7 +368,7 @@ class FileStoreComparator:
   def compare(self):
     store = self.load_store()
     self._store_root = store
-    files = self.get_file_list_and_date(self.targetdir, Path())
-    self.compare_list(store, files, Path())
+    disk = self.get_fs_map(self.targetdir)
+    self.compare_map(store, disk)
     self.save_store(store)
 

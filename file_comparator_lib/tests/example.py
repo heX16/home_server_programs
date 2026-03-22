@@ -2,12 +2,11 @@
 # coding: utf-8
 
 usage = '''
-Usage: watch.py [--dir=PATH] [--store=FILE] [--ext=EXT]
+Usage: watch.py [--dir=PATH] [--store=FILE]
 
 Options:
   --dir=PATH    path to directory to compare [default: .]
   --store=FILE  name of YAML file where stored files info [default: service_list.yaml]
-  --ext=EXT     extension of service [default: *]
 '''
 
 from docopt import docopt # pip3 install docopt
@@ -51,7 +50,6 @@ def main():
   store_file = Path(options['--store'])
   target_dir = options['--dir'] or '.'
   store_cmp = FileStoreComparator2(store_file, target_dir)
-  store_cmp.file_extension = options['--ext']
   store_cmp.ignore_list = [store_file.name]
 
   store_cmp.compare()

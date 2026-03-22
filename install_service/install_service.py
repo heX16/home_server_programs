@@ -262,7 +262,7 @@ class FileEventsSystemd:
 
 
 class FileStoreComparatorAutoSave(file_comparator.FileStoreComparator):
-    def on_store_updated(self, change_type: str, key: str) -> None:
+    def on_store_updated(self, change_type: str, key: str, values: dict) -> None:
         # Persist store early (before any external commands that may hang).
         if self._store_root is None:
             return

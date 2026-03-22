@@ -17,13 +17,12 @@ dirs:     # дириктории для отслеживания.
 '''
 
 usage = '''
-Usage: watcher.py --config=YAML_CFG [--dir=PATH] [--store=FILE] [--ext=EXT] [--log-level=LEVEL] [--daemon] [--scantime=SECOND] [--skip-link]
+Usage: watcher.py --config=YAML_CFG [--dir=PATH] [--store=FILE] [--log-level=LEVEL] [--daemon] [--scantime=SECOND] [--skip-link]
 
 Options:
   --config=YAML_CFG   YAML config where desc. action on file/dir changes [default: watcher_config.yaml]
   --dir=PATH    path to directory from copy service file
   --store=FILE  name of YAML file where stored files info [default: watcher_store.yaml]
-  --ext=EXT     extension of service [default: *]
   --log-level=LEVEL  log level [default: WARNING]
   --daemon      run to infinity loop (by default run once and end)
   --scantime=SECOND   scan interval (for daemon) [default: 60]
@@ -205,7 +204,6 @@ def main():
   #options['--config'] = 'D:\\Sync\\House0-programs\\file_watcher\\watcher_config_test.yaml'
 
   store_cmp = FileStoreComparator2(options['--store'], options['--dir'])
-  store_cmp.file_extension = options['--ext']
   store_cmp.ignore_list.append(Path(options['--store']).name)
   store_cmp.config_path = options['--config']
   store_cmp.skip_link = options['--skip-link']
