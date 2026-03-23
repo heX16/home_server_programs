@@ -1,23 +1,36 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# chmod g+x set_access.sh
+echo 'Setting the access rights.'
 
-echo Setting the access right.
+# /opt/hspro
+if cd '/opt/hspro'; then
+  sudo chown -R root:share .
+  sudo chmod -R g+w .
+  find . -type f -name '*.sh' -exec chmod a+rx '{}' \;
+  find . -type f -name '*.elf' -exec chmod a+rx '{}' \;
+  find . -type f -name '*.exec.??' -exec chmod a+rx '{}' \;
+  find . -type f -name '*.exec.???' -exec chmod a+rx '{}' \;
+else
+  echo "WARN: cannot cd to /opt/hspro, skipping"
+fi
 
-cd /srv/programs
-sudo chown -R syncthing:share *
-sudo chmod -R g+w *
-find . -name "*.sh" -type f -exec chmod +rx "{}" \;
-find . -name "*.elf" -type f -exec chmod +rx "{}" \;
-find . -name "*.exec.??" -type f -exec chmod +rx "{}" \;
-find . -name "*.exec.???" -type f -exec chmod +rx "{}" \;
+if cd '/srv/config'; then
+  sudo chown -R root:share .
 
-cd /srv/config
-sudo chown -R syncthing:share *
-sudo chmod -R g+w *
-find . -name "*.sh" -type f -exec chmod +rx "{}" \;
+  # Group can read/write; add execute only on dirs (and files that already had +x)
+  # Others: no access
+  sudo chmod -R g+rwX,o-rwx .
 
-cd /etc/openhab2
-sudo chown -R openhab:share *
-sudo chmod -R g+w *
+  # Ensure setgid on directories so new items inherit group "share"
+  sudo find . -type d -exec chmod g+s '{}' \;
+else
+  echo 'WARN: cannot cd to /srv/config, skipping'
+fi
 
+# /etc/openhab2
+if cd '/etc/openhab2'; then
+  sudo chown -R openhab:share .
+  sudo chmod -R g+w .
+else
+  echo "WARN: cannot cd to /etc/openhab2, skipping"
+fi
