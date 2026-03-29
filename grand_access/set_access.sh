@@ -11,7 +11,7 @@ if cd '/opt/hspro'; then
   find . -type f -name '*.exec.??' -exec chmod a+rx '{}' \;
   find . -type f -name '*.exec.???' -exec chmod a+rx '{}' \;
 else
-  #echo "WARN: cannot cd to /opt/hspro, skipping"
+  : # WARN: cannot cd to /opt/hspro, skipping
 fi
 
 if cd '/srv/config'; then
@@ -24,7 +24,7 @@ if cd '/srv/config'; then
   # Ensure setgid on directories so new items inherit group "share"
   sudo find . -type d -exec chmod g+s '{}' \;
 else
-  #echo 'WARN: cannot cd to /srv/config, skipping'
+  : # WARN: cannot cd to /srv/config, skipping
 fi
 
 # /etc/openhab2
@@ -32,5 +32,5 @@ if cd '/etc/openhab2'; then
   sudo chown -R openhab:share .
   sudo chmod -R g+w .
 else
-  #echo "WARN: cannot cd to /etc/openhab2, skipping"
+  : # WARN: cannot cd to /etc/openhab2, skipping
 fi
