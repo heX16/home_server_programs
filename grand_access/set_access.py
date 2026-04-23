@@ -184,6 +184,7 @@ def main() -> None:
         group_rwX_others_none=True,
         setgid_directories=True,
     )
+    logger.info('Setting the access rights. Done.')
 
 
 if __name__ == '__main__':
