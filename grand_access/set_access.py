@@ -179,16 +179,10 @@ def main() -> None:
     )
     configure_tree(
         '/srv/config',
-        'root',
+        'syncthing',
         'share',
         group_rwX_others_none=True,
         setgid_directories=True,
-    )
-    configure_tree(
-        '/etc/openhab2',
-        'openhab',
-        'share',
-        add_group_write=True,
     )
 
 
