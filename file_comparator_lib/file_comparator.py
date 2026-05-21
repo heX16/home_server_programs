@@ -365,6 +365,12 @@ class FileStoreComparator:
       with open(self.store_file, 'w', encoding=self.encoding) as f:
         f.write(data)
 
+  def get_root(self) -> dict:
+    '''Return the in-memory store dict (live reference). Empty dict if compare() was not run.'''
+    if self._store_root is None:
+      return {}
+    return self._store_root
+
   def compare(self):
     store = self.load_store()
     self._store_root = store
