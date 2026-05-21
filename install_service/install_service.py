@@ -124,11 +124,52 @@ def format_unit_status(props: dict) -> str:
     return f'{active}/{sub}'
 
 
-def update_systemd_meta(systemd: dict, props: dict) -> None:
+def unit_startup_failed(props: dict) -> bool:
+    if props.get('ActiveState') == 'failed':
+        return True
+    result = props.get('Result', '')
+    if result and result not in ('success', 'done'):
+        return True
+    exec_status = str(props.get('ExecMainStatus', ''))
+    if exec_status and exec_status not in ('0', 'unknown'):
+        return True
+    return False
+
+
+def fetch_unit_log_lines(unit: str, count: int = 5) -> dict:
+    '''Return last journal lines as {1: newest, ..., count: oldest}.'''
+    logs = {}
+    try:
+        c = run(
+            ['sudo', 'journalctl', '-u', unit, '-n', str(count), '--no-pager', '-o', 'short'],
+            stdout=PIPE,
+            stderr=PIPE,
+            universal_newlines=True,
+        )
+        if c.returncode != 0:
+            log.warning('journalctl -u %s failed (code %s)', unit, c.returncode)
+            return logs
+        lines = [ln for ln in c.stdout.splitlines() if ln.strip()]
+        for i, line in enumerate(reversed(lines[-count:]), start=1):
+            logs[i] = line
+    except Exception as e:
+        log.warning('journalctl -u %s error: %s', unit, e)
+    return logs
+
+
+def update_systemd_meta(systemd: dict, unit: str, props: dict) -> None:
     systemd['status'] = format_unit_status(props)
     systemd['unit_file_state'] = props.get('UnitFileState', 'unknown')
     systemd['result'] = props.get('Result', 'unknown')
     systemd['exec_main_status'] = props.get('ExecMainStatus', 'unknown')
+    if unit_startup_failed(props):
+        logs = fetch_unit_log_lines(unit)
+        if logs:
+            systemd['logs'] = logs
+        else:
+            systemd.pop('logs', None)
+    else:
+        systemd.pop('logs', None)
 
 
 def update_units_status(store: dict) -> None:
@@ -144,7 +185,8 @@ def update_units_status(store: dict) -> None:
         if not isinstance(systemd, dict):
             systemd = {}
             meta['systemd'] = systemd
-        update_systemd_meta(systemd, systemctl_show(key))
+        props = systemctl_show(key)
+        update_systemd_meta(systemd, key, props)
 
 
 def parse_service_file_WIP(self, file_path: Path):
