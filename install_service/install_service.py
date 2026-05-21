@@ -96,6 +96,45 @@ def sh(command: str, *params):
             log.error('Output:\n%s', c.stderr)
 
 
+def systemctl_show(unit: str) -> dict:
+    '''Calls "systemctl show <unit>" and returns a dict of key=value from the output.'''
+    info_dict = {}
+    try:
+        c = run(
+            ['sudo', 'systemctl', 'show', unit],
+            stdout=PIPE,
+            stderr=PIPE,
+            universal_newlines=True,
+        )
+        if c.returncode != 0:
+            log.warning('systemctl show %s failed (code %s)', unit, c.returncode)
+            return info_dict
+        for line in c.stdout.splitlines():
+            if '=' in line:
+                key, val = line.split('=', 1)
+                info_dict[key] = val
+    except Exception as e:
+        log.warning('systemctl show %s error: %s', unit, e)
+    return info_dict
+
+
+def format_unit_status(props: dict) -> str:
+    active = props.get('ActiveState', 'unknown')
+    sub = props.get('SubState', 'unknown')
+    return f'{active}/{sub}'
+
+
+def update_units_status(store: dict) -> None:
+    if not store:
+        return
+    for key, meta in store.items():
+        if not isinstance(meta, dict):
+            continue
+        if not systemd_file_type(Path(key)):
+            continue
+        meta['status'] = format_unit_status(systemctl_show(key))
+
+
 def parse_service_file_WIP(self, file_path: Path):
     """
     Parse .service file for custom parameters.
@@ -264,9 +303,10 @@ class FileEventsSystemd:
 class FileStoreComparatorAutoSave(file_comparator.FileStoreComparator):
     def on_store_updated(self, change_type: str, key: str, values: dict) -> None:
         # Persist store early (before any external commands that may hang).
-        if self._store_root is None:
+        root = self.get_root()
+        if not root:
             return
-        self.save_store(self._store_root)
+        self.save_store(root)
 
 
 def main():
@@ -286,6 +326,10 @@ def main():
     store_cmp.on_changed_store_error = event.file_changed_store_error
     store_cmp.on_filter = event.file_filter
     store_cmp.compare()
+    
+    root = store_cmp.get_root()
+    update_units_status(root)
+    store_cmp.save_store(root)
 
     log.info('End.')
 
