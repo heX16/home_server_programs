@@ -124,6 +124,13 @@ def format_unit_status(props: dict) -> str:
     return f'{active}/{sub}'
 
 
+def update_systemd_meta(systemd: dict, props: dict) -> None:
+    systemd['status'] = format_unit_status(props)
+    systemd['unit_file_state'] = props.get('UnitFileState', 'unknown')
+    systemd['result'] = props.get('Result', 'unknown')
+    systemd['exec_main_status'] = props.get('ExecMainStatus', 'unknown')
+
+
 def update_units_status(store: dict) -> None:
     if not store:
         return
@@ -132,7 +139,12 @@ def update_units_status(store: dict) -> None:
             continue
         if not systemd_file_type(Path(key)):
             continue
-        meta['status'] = format_unit_status(systemctl_show(key))
+        meta.pop('status', None)
+        systemd = meta.setdefault('systemd', {})
+        if not isinstance(systemd, dict):
+            systemd = {}
+            meta['systemd'] = systemd
+        update_systemd_meta(systemd, systemctl_show(key))
 
 
 def parse_service_file_WIP(self, file_path: Path):
@@ -326,7 +338,7 @@ def main():
     store_cmp.on_changed_store_error = event.file_changed_store_error
     store_cmp.on_filter = event.file_filter
     store_cmp.compare()
-    
+
     root = store_cmp.get_root()
     update_units_status(root)
     store_cmp.save_store(root)
