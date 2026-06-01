@@ -1,9 +1,35 @@
 #!/usr/bin/env python3
+"""
+Update dynamic DNS with the current public IPv6 address.
+
+Usage:
+  dyndns_v6.py TOKEN [INTERFACE]
+  dyndns_v6.py --provider=PROVIDER [--domains=DOMAINS] [--token=TOKEN] [--interface=INTERFACE] [--verbose]
+
+Options:
+  --provider=PROVIDER    DNS provider (freedns or duckdns) [default: freedns]
+  --token=TOKEN          Provider token
+  --domains=DOMAINS      DuckDNS subname(s), comma-separated (without .duckdns.org)
+  --interface=INTERFACE  Network interface for IPv6 source lookup
+  --verbose              Request verbose response from DuckDNS
+
+Examples:
+  dyndns_v6.py YOUR_TOKEN
+  dyndns_v6.py YOUR_TOKEN eth0
+  dyndns_v6.py --provider=freedns --token=YOUR_TOKEN --interface=eth0
+  dyndns_v6.py --provider=duckdns --domains=thai-server1616 --token=YOUR_TOKEN
+  dyndns_v6.py --provider=duckdns --domains=foo,bar --token=YOUR_TOKEN --verbose
+"""
+
+import os
 import re
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
+
+from docopt import docopt
 
 
 HTTP_TIMEOUT_S = 15
@@ -55,7 +81,7 @@ def get_ipv6_src(interface: str | None) -> str:
     return addr
 
 
-def dyndns_update(token: str, address: str) -> str:
+def freedns_update(token: str, address: str) -> str:
     url = f'http://freedns.afraid.org/dynamic/update.php?{token}&address={address}'
     req = urllib.request.Request(
         url,
@@ -66,22 +92,41 @@ def dyndns_update(token: str, address: str) -> str:
         return resp.read().decode('utf-8', errors='replace').strip()
 
 
+def duckdns_update(domains: str, token: str, ipv6: str, verbose: bool = False) -> str:
+    q = urllib.parse.urlencode({
+        'domains': domains,
+        'token': token,
+        'ipv6': ipv6,
+        **({'verbose': 'true'} if verbose else {}),
+    })
+    req = urllib.request.Request(
+        f'https://www.duckdns.org/update?{q}',
+        headers={'User-Agent': 'dyndns_v6.py (duckdns.org)'},
+    )
+    with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_S) as resp:
+        return resp.read().decode('utf-8', errors='replace').strip()
+
+
+def is_duckdns_success(response: str) -> bool:
+    return response.splitlines()[0].strip() == 'OK' if response else False
+
+
 def main() -> int:
-    if len(sys.argv) not in (2, 3):
-        print('Usage: dyndns_v6.py TOKEN [INTERFACE]', file=sys.stderr)
-        return 2
+    options = docopt(__doc__)
 
-    token = sys.argv[1].strip()
-    if not token:
-        print('TOKEN is empty', file=sys.stderr)
+    if options['--provider'] == 'duckdns':
+        if not (options['--domains'] or os.environ.get('DUCKDNS_DOMAINS')):
+            print('--domains is required for duckdns (or set DUCKDNS_DOMAINS)', file=sys.stderr)
+            return 2
+        if not (options['--token'] or os.environ.get('DUCKDNS_TOKEN')):
+            print('--token is required for duckdns (or set DUCKDNS_TOKEN)', file=sys.stderr)
+            return 2
+    elif not (options['TOKEN'] or options['--token']):
+        print('--token is required for freedns provider', file=sys.stderr)
         return 2
-
-    interface = None
-    if len(sys.argv) == 3:
-        interface = sys.argv[2].strip() or None
 
     try:
-        address = get_ipv6_src(interface)
+        address = get_ipv6_src((options['INTERFACE'] or options['--interface'] or '').strip() or None)
     except Exception as e:
         print(str(e), file=sys.stderr)
         return 1
@@ -93,7 +138,18 @@ def main() -> int:
     print(f'IPv6: {address}')
 
     try:
-        response = dyndns_update(token, address)
+        if options['--provider'] == 'duckdns':
+            response = duckdns_update(
+                (options['--domains'] or os.environ.get('DUCKDNS_DOMAINS') or '').strip(),
+                (options['--token'] or os.environ.get('DUCKDNS_TOKEN') or '').strip(),
+                address,
+                verbose=options['--verbose'],
+            )
+            if not is_duckdns_success(response):
+                print(f'update failed: {response}', file=sys.stderr)
+                return 1
+        else:
+            response = freedns_update((options['TOKEN'] or options['--token'] or '').strip(), address)
     except urllib.error.URLError as e:
         print(f'update failed: {e}', file=sys.stderr)
         return 1
@@ -107,4 +163,3 @@ def main() -> int:
 
 if __name__ == '__main__':
     raise SystemExit(main())
-
