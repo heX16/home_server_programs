@@ -174,9 +174,15 @@ def gen_switch_node(item):
   return data
 
 
-# _дублируем_ список DO
-# (суки! дебилы!!! - см https://community.home-assistant.io/t/group-specific-friendly-name/12816/26)
-def switch2(n):
+def duplicate_do_as_system_switch(n):
+  """
+  Create a "system" duplicate of a DO item.
+
+  Home Assistant groups do not support per-group friendly names cleanly, so we duplicate
+  DO switches and put them into a separate technical view (tab 'Sys') with generated names.
+  See: https://community.home-assistant.io/t/group-specific-friendly-name/12816/26
+  """
+
   n['n']=n['n']+'_sys'
   n['name']=n['box']+'.'+n['ns']+' '+n['namesig']
   n['sysname'] = 'switch.'+n['n']
@@ -275,8 +281,42 @@ def read_signals_list():
   return signals_list
 
 
-def generate_linear_mqtt_settings(signals_list, tab_list):
+def build_group_data(signals_list):
+  signals_list_sorted = sorted(signals_list, key=lambda x: x['group'])
+
+  # unique group names (only DO groups)
+  grp_set = set(list(map(lambda i: str(i['group']).strip(), filter(lambda x: x['type'] == 'DO', signals_list_sorted))))
+  grp_set.discard('')
+  grp_set.discard('group_reserved')
+  grp_list = list(sorted(grp_set))
+
+  # unique tab names (only DO tabs)
+  tab_set = set(list(map(lambda i: str(i['tab']).strip(), filter(lambda x: x['type'] == 'DO', signals_list_sorted))))
+  tab_set.discard('')
+  tab_list = list(sorted(tab_set))
+
+  groups_yaml = {}
+
+  for grp in grp_list:
+    l = filter(lambda fv: fv['group'] == grp, signals_list_sorted)
+    groups_yaml.update(gen_group(l, eng_name(grp), grp))
+
+  # system groups
+  groups_yaml.update(gen_group(filter(lambda x: x['type'] == 'DO', signals_list_sorted), 'all_switch'))
+  groups_yaml.update(gen_group(filter(lambda x: x['type'] == 'DI', signals_list_sorted), 'all_binary_sensor'))
+
+  return {
+    'signals_list': signals_list_sorted,
+    'tab_list': tab_list,
+    'groups_yaml': groups_yaml,
+  }
+
+
+def generate_linear_mqtt_settings(group_data):
   ################### конфиг 'linear mqtt' #################
+
+  signals_list = group_data['signals_list']
+  tab_list = group_data['tab_list']
 
   # перечисляем вкладки
   config_linear_mqtt_dashboards = []
@@ -324,19 +364,13 @@ def generate_linear_mqtt_settings(signals_list, tab_list):
         outfile, ensure_ascii=False)
 
 
-def generate_configs(signals_list):
+def generate_configs(signals_list, group_data):
   # Write YAML file
 
   # сохраняем список DI
   with io.open(CONFIG_HA_DIR / 'sensors_binary' / 'sensors_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
       yaml.dump(regen_list(filter(lambda x: x['type']=='DI', signals_list), gen_binary_sensor_node),
         outfile, default_flow_style=False, allow_unicode=True)
-
-  tmp_list = list(
-    map(switch2,
-      copy.deepcopy(
-        filter(lambda x: x['type']=='DO', signals_list))))
-  signals_list.extend(tmp_list)
 
   with io.open(CONFIG_HA_DIR / 'switches' / 'switch_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
       yaml.dump(regen_list(filter(lambda x: x['type']=='DO', signals_list), gen_switch_node),
@@ -349,53 +383,43 @@ def generate_configs(signals_list):
   with io.open(CONFIG_HA_DIR / 'customize' / 'customize_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
       yaml.dump(cust_list, outfile, default_flow_style=False, allow_unicode=True)
 
-  # сортируем по группам #####################
-
-  signals_list = sorted(signals_list, key=lambda x: x['group'])
-
-  # группы #####################
-
-  cust_list = {}
-  grp_list_accum = list()
-
-  # создаем перечень уникальных групп по названиям групп (используется только группа DO)
-  grp_set = set(list(map(lambda i: str(i['group']).strip(), filter(lambda x: x['type']=='DO', signals_list))))
-  grp_set.discard('')
-  grp_set.discard('group_reserved')
-  grp_list = list(sorted(grp_set))
-  grp_set = None
-  #for i in grp_list: print('['+i+']' + eng_name(i))
-
-  # создаем перечень уникальных групп по названиям групп (используется только группа DO)
-  tab_set = set(list(map(lambda i: str(i['tab']).strip(), filter(lambda x: x['type']=='DO', signals_list))))
-  tab_set.discard('')
-  tab_list = list(sorted(tab_set))
-  tab_set = None
-  #for i in tab_list: print('['+i+']')
-
-  # проходим по всему списку групп, и создаем фильтрованные списки принадлежности к группам
-  for i in grp_list:
-    l = filter(lambda fv: fv['group'] == i, signals_list)
-    cust_list.update(gen_group(l, eng_name(i), i))
-
-  # системные группы
-  cust_list.update(gen_group(filter(lambda x: x['type']=='DO', signals_list), 'all_switch'))
-  cust_list.update(gen_group(filter(lambda x: x['type']=='DI', signals_list), 'all_binary_sensor'))
+  cust_list = group_data['groups_yaml']
 
   # сохраняем список 'скрытых' групп
   with io.open(CONFIG_HA_DIR / 'groups' / 'group_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
       yaml.dump(cust_list, outfile, default_flow_style=False, allow_unicode=True)
-
-  generate_linear_mqtt_settings(signals_list, tab_list)
 
   # автоматизация - отключенно. используется gen_logic.
   #with io.open('automation.yaml', 'w', encoding='utf8') as outfile:
   #    yaml.dump(gen_automation_all(), outfile, default_flow_style=False, allow_unicode=True)
 
 
+def append_system_do_duplicates(signals_list):
+  """
+  Duplicate all DO items and append them back into `signals_list` as "system" switches.
+
+  This is used to create an additional, purely technical view/grouping of switches:
+  - the duplicated items get a modified `n`/`sysname` suffix (`*_sys`)
+  - a generated `name` based on box/signal metadata
+  - a forced `tab` = 'Sys' and `system` = True
+
+  The function mutates the input list in-place and returns the updated `signals_list`
+  (the same list instance).
+  """
+  tmp_list = list(
+    map(duplicate_do_as_system_switch,
+      copy.deepcopy(
+        filter(lambda x: x['type'] == 'DO', signals_list))))
+  signals_list.extend(tmp_list)
+  return signals_list
+
+
 def main():
   signals_list = read_signals_list()
-  generate_configs(signals_list)
+  signals_list = append_system_do_duplicates(signals_list)
+  group_data = build_group_data(signals_list)
+  generate_configs(signals_list, group_data)
+  generate_linear_mqtt_settings(group_data)
   print('generate ok')
 
 

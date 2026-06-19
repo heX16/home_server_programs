@@ -3,3 +3,5 @@
 habits_web/**
 *.pyc
 /install_service/*.yaml
+config_gen_ha/config_ha/*
+config_gen_ha/settings.json
