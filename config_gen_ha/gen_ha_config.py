@@ -14,6 +14,8 @@ import sys
 import csv
 import io
 import copy
+import re
+import zlib
 import yaml
 from pathlib import Path
 from docopt import docopt
@@ -26,6 +28,69 @@ DASHBOARD_ROOM_OTHER = 'Other'
 
 def norm_col(cell):
   return cell.strip().split('\n')[0].strip()
+
+
+def norm_tab(value):
+  if value is None:
+    return ''
+  return str(value).strip()
+
+
+def slugify_ascii(value):
+  """
+  Convert an arbitrary tab name to a filename-safe ASCII slug.
+
+  Notes:
+  - keeps only [a-z0-9-]
+  - converts whitespace/underscores to '-'
+  - removes everything else (including Cyrillic); uses deterministic fallback if empty
+
+  Examples:
+   - '  Main  Tab  '   -> 'main-tab'
+   - '__Main__Tab__'   -> 'main-tab'
+   - '---main---'      -> 'main'
+   - 'Main---Tab'      -> 'main-tab'
+   - 'main..tab!!'     -> 'maintab'
+   - 'R&D / Lab'       -> 'rd-lab'
+   - 'Кухня'           -> 'x????????' (CRC32-based fallback)
+   - 'Свет 1'          -> '1'
+   - 'Kitchen Кухня'   -> 'kitchen'
+   - 'Kitchen 2'       -> 'kitchen-2'
+   - 'Room_Кухня_2'    -> 'room-2'
+  """
+  raw = norm_tab(value).lower()
+  raw = re.sub(r'[\s_]+', '-', raw)
+  raw = re.sub(r'[^a-z0-9-]+', '', raw)
+  # Collapse multiple '-' and trim them from both ends.
+  raw = re.sub(r'-{2,}', '-', raw).strip('-')
+  if raw:
+    return raw
+  crc = zlib.crc32(norm_tab(value).encode('utf-8')) & 0xffffffff
+  return f'x{crc:08x}'
+
+
+def unique_slug(base_slug, used_slugs):
+  if base_slug not in used_slugs:
+    used_slugs.add(base_slug)
+    return base_slug
+  i = 2
+  while True:
+    candidate = f'{base_slug}-{i}'
+    if candidate not in used_slugs:
+      used_slugs.add(candidate)
+      return candidate
+    i += 1
+
+
+def build_lovelace_rooms_dashboard_for_tab(signals_list, tab_value, tab_slug):
+  filtered = list(filter(lambda x: norm_tab(x.get('tab', '')) == tab_value, signals_list))
+  dashboard = build_lovelace_rooms_dashboard(filtered)
+  dashboard = dict(dashboard)
+  dashboard['title'] = f'Rooms (generated) - {tab_value}'
+  if dashboard.get('views'):
+    dashboard['views'] = [dict(dashboard['views'][0])]
+    dashboard['views'][0]['path'] = f'rooms-{tab_slug}'
+  return dashboard
 
 
 SIGNALS_CSV_COLUMNS = {
@@ -254,6 +319,9 @@ def read_signals_list(csv_path):
 def ha_gen_configs(signals_list, out_dir):
   # Write YAML file
   ensure_output_dirs(out_dir)
+  legacy_rooms = out_dir / 'lovelace' / 'rooms-generated.yaml'
+  if legacy_rooms.exists():
+    legacy_rooms.unlink()
 
   # MQTT manual entities (Home Assistant integration `mqtt:`), list-per-item style.
   di_nodes = list(map(ha_gen_binary_sensor_node, filter(lambda x: x['type'] == 'DI', signals_list)))
@@ -278,9 +346,22 @@ def ha_gen_configs(signals_list, out_dir):
   with io.open(out_dir / 'customize' / 'customize_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
       yaml.dump(customize_nodes, outfile, default_flow_style=False, allow_unicode=True)
 
-  lovelace_dashboard = build_lovelace_rooms_dashboard(signals_list)
-  with io.open(out_dir / 'lovelace' / 'rooms-generated.yaml', 'w', encoding='utf-8-sig') as outfile:
-      yaml.dump(lovelace_dashboard, outfile, default_flow_style=False, allow_unicode=True)
+  used_slugs = set()
+  tabs_in_order = []
+  for item in signals_list:
+    tab = norm_tab(item.get('tab', ''))
+    if not tab:
+      continue
+    if tab not in tabs_in_order:
+      tabs_in_order.append(tab)
+
+  for tab in tabs_in_order:
+    base_slug = slugify_ascii(tab)
+    tab_slug = unique_slug(base_slug, used_slugs)
+    lovelace_dashboard = build_lovelace_rooms_dashboard_for_tab(signals_list, tab, tab_slug)
+    out_name = f'tab-{tab_slug}.yaml'
+    with io.open(out_dir / 'lovelace' / out_name, 'w', encoding='utf-8-sig') as outfile:
+        yaml.dump(lovelace_dashboard, outfile, default_flow_style=False, allow_unicode=True)
 
 
 def append_system_do_duplicates(signals_list):

@@ -27,8 +27,9 @@ python gen_ha_config.py --csv="signals.csv" --out="out_ha"
   - Пустой список (резерв под будущие типы/ручные добавления).
 - **`customize/customize_gen.yaml`**
   - `homeassistant.customize`: выставляет `friendly_name` для каждого сгенерированного entity.
-- **`lovelace/rooms-generated.yaml`**
-  - Lovelace-дашборд: один view «Комнаты» с карточками по комнатам (колонка `Группа`), внутри — только DO (`switch.*`).
+- **`lovelace/tab-*.yaml`**
+  - Lovelace-дашборды (несколько файлов): для каждой уникальной непустой `Вкладка` генерируется отдельный YAML-файл
+    с одним view «Комнаты» с карточками по комнатам (колонка `Группа`), внутри — только DO (`switch.*`).
 
 Важно: параметры подключения к MQTT брокеру (host/port/user/pass) в актуальном Home Assistant настраиваются через UI
 (Settings → Devices & services → MQTT). YAML тут используется только для ручных MQTT-сущностей.
@@ -47,23 +48,23 @@ mqtt: !include_dir_merge_list mqtt/
 Этот стиль нельзя смешивать с альтернативным стилем `mqtt: { binary_sensor: [...], switch: [...] }`, и нельзя
 разносить `mqtt:` несколькими include-блоками.
 
-### Lovelace-дашборд (отдельный YAML-managed dashboard)
+### Lovelace-дашборды (отдельные YAML-managed dashboards)
 
-Чтобы не переводить основной UI-дашборд в YAML mode, подключите сгенерированный файл как **отдельный dashboard**.
+Чтобы не переводить основной UI-дашборд в YAML mode, подключите сгенерированные файлы как **отдельные dashboards**.
 В `configuration.yaml` Home Assistant:
 
 ```yaml
 lovelace:
   dashboards:
-    rooms-generated:
+    rooms-tab-main:
       mode: yaml
-      title: Rooms (generated)
+      title: Rooms (generated) - Main
       icon: mdi:home-map-marker
       show_in_sidebar: true
-      filename: lovelace/rooms-generated.yaml
+      filename: lovelace/tab-main.yaml
 ```
 
-Файл `lovelace/rooms-generated.yaml` должен лежать в конфиг-директории HA (обычно `/config/lovelace/rooms-generated.yaml`).
+Файлы `lovelace/tab-*.yaml` должны лежать в конфиг-директории HA (обычно `/config/lovelace/tab-*.yaml`).
 После изменения `configuration.yaml` перезапустите Home Assistant.
 
 Пример структуры сгенерированного дашборда:
@@ -194,12 +195,14 @@ views:
 - **`Наименование сигнала`**
   - используется как запасной `friendly_name`
 
-### 4) Lovelace-дашборд (файл `lovelace/rooms-generated.yaml`)
+### 4) Lovelace-дашборды (файлы `lovelace/tab-*.yaml`)
 
-Скрипт генерирует один view «Комнаты» с карточками `type: entities` по комнатам:
+Скрипт генерирует по одному файлу на вкладку (колонка **`Вкладка`**), каждый файл содержит один view «Комнаты»
+с карточками `type: entities` по комнатам:
 
 - **Комната** берётся из колонки **`Группа`** (отображаемое имя карточки = значение `Группа`).
 - **Сущности**: только `Тип = DO` → `switch.<n>` (без системных дублей `*_sys`).
+- **Пустая `Вкладка`**: строка не попадает ни в один Lovelace-файл.
 - **Пустая `Группа`**: карточка `Other`.
 - **`group_reserved`**: сигнал пропускается (не попадает в дашборд).
 - **Сортировка** внутри комнаты: по `Я.`, затем по `N`, затем по `n`.
@@ -223,4 +226,4 @@ views:
 - `group = 'Box<Я.>'`
 - `system = True` (это внутреннее поле скрипта; в YAML напрямую не выводится)
 
-Системные дубликаты **не включаются** в Lovelace-дашборд `rooms-generated.yaml`.
+Системные дубликаты **не включаются** в Lovelace-дашборды `tab-*.yaml`.
