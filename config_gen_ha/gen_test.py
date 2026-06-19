@@ -275,6 +275,55 @@ def read_signals_list():
   return signals_list
 
 
+def generate_linear_mqtt_settings(signals_list, tab_list):
+  ################### конфиг 'linear mqtt' #################
+
+  # перечисляем вкладки
+  config_linear_mqtt_dashboards = []
+  config_linear_mqtt_tabs = []
+  tab_num = 1
+  for tab in tab_list:
+    # создаем элементы вкладок
+
+    lastgrp = ''
+    items = []
+    for i in filter(lambda x: (x['tab']==tab and x['group']!=''), signals_list):
+      if i['group']!=lastgrp:
+        lastgrp = i['group']
+        items.append(gen_json_config_header(lastgrp))
+      items.append(gen_json_config_node(i))
+
+    config_linear_mqtt_dashboards.append({
+      'dashboard': items,
+      'id': tab_num
+    })
+    config_linear_mqtt_tabs.append({
+      "id": tab_num,
+      "name": tab
+    })
+    tab_num = tab_num + 1
+
+
+
+  config_linear_mqtt = {
+      "settingsVersion": 1,
+      "port": "1883",
+      "username": "",
+      "push_notifications_subscribe_topic": "out/wcs/push_notifications/#",
+      "server_topic": "",
+      "keep_alive": "60",
+      "connection_in_background": False,
+      "server": "192.168.1.9",
+      "dashboards": config_linear_mqtt_dashboards,
+      "tabs": config_linear_mqtt_tabs
+    }
+
+  with open('settings.json', 'w', encoding='utf-8-sig') as outfile:
+      json.dump(
+        config_linear_mqtt,
+        outfile, ensure_ascii=False)
+
+
 def generate_configs(signals_list):
   # Write YAML file
 
@@ -337,53 +386,7 @@ def generate_configs(signals_list):
   with io.open(CONFIG_HA_DIR / 'groups' / 'group_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
       yaml.dump(cust_list, outfile, default_flow_style=False, allow_unicode=True)
 
-
-  ################### конфиг 'linear mqtt' #################
-
-  # перечисляем вкладки
-  config_linear_mqtt_dashboards = []
-  config_linear_mqtt_tabs = []
-  tab_num = 1
-  for tab in tab_list:
-    # создаем элементы вкладок
-
-    lastgrp = ''
-    items = []
-    for i in filter(lambda x: (x['tab']==tab and x['group']!=''), signals_list):
-      if i['group']!=lastgrp:
-        lastgrp = i['group']
-        items.append(gen_json_config_header(lastgrp))
-      items.append(gen_json_config_node(i))
-
-    config_linear_mqtt_dashboards.append({
-      'dashboard': items,
-      'id': tab_num
-    })
-    config_linear_mqtt_tabs.append({
-      "id": tab_num,
-      "name": tab
-    })
-    tab_num = tab_num + 1
-
-
-
-  config_linear_mqtt = {
-      "settingsVersion": 1,
-      "port": "1883",
-      "username": "",
-      "push_notifications_subscribe_topic": "out/wcs/push_notifications/#",
-      "server_topic": "",
-      "keep_alive": "60",
-      "connection_in_background": False,
-      "server": "192.168.1.9",
-      "dashboards": config_linear_mqtt_dashboards,
-      "tabs": config_linear_mqtt_tabs
-    }
-
-  with open('settings.json', 'w', encoding='utf-8-sig') as outfile:
-      json.dump(
-        config_linear_mqtt,
-        outfile, ensure_ascii=False)
+  generate_linear_mqtt_settings(signals_list, tab_list)
 
   # автоматизация - отключенно. используется gen_logic.
   #with io.open('automation.yaml', 'w', encoding='utf8') as outfile:
