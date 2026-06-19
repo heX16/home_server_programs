@@ -31,6 +31,49 @@ def norm_col(cell):
   return cell.strip().split('\n')[0].strip()
 
 
+SIGNALS_CSV_COLUMNS = {
+  'type': 'Тип',
+  'name': 'Имя в интерфейсе',
+  'namesig': 'Наименование сигнала',
+  'sig': 'sig',
+  'ns': 'N',
+  'mqtt': ('MQTT name', 'Путь MQTT'),
+  'group': 'Группа',
+  'logic': 'Logic',
+  'module': 'Модуль',
+  'box': 'Я.',
+  'tab': 'Вкладка',
+}
+
+OPTIONAL_SIGNALS_CSV_COLUMNS = {'logic'}
+
+
+def parse_signals_csv_header(row):
+  """Map the first CSV row to semantic column indices."""
+  col_to_idx = {norm_col(cell): idx for idx, cell in enumerate(row)}
+  indices = {}
+
+  for key, header in SIGNALS_CSV_COLUMNS.items():
+    if isinstance(header, tuple):
+      idx = next((col_to_idx[name] for name in header if name in col_to_idx), None)
+    else:
+      idx = col_to_idx.get(header)
+    indices[key] = idx
+
+  missing = [
+    key for key, idx in indices.items()
+    if idx is None and key not in OPTIONAL_SIGNALS_CSV_COLUMNS
+  ]
+  if missing:
+    seen_headers = ', '.join(col_to_idx.keys())
+    raise ValueError(
+      f'Missing required CSV columns: {", ".join(missing)}. '
+      f'Available headers: {seen_headers}'
+    )
+
+  return indices
+
+
 # items: sysname
 def ha_gen_group(item_list, grp_name, grp_caption = '', is_view = False):
 #all_sensors:
@@ -160,76 +203,37 @@ def ensure_output_dirs(out_dir):
 def read_signals_list(csv_path):
   # Read CSV file
   signals_list = []
-  iType = None
-  iName = None
-  iNameSig = None
-  iMqtt = None
-  iN = None
-  iGrp = None
-  iLogic = None
-  iTab = None
-
-  # f = open('test.txt', 'w')
-  #f.write('test')
 
   with open(csv_path, newline='', encoding='utf-8') as csvfile:
     datareader = csv.reader(csvfile, delimiter=';', quotechar='"')
-    first_line = True
-    for row in datareader:
-      # определяем номеря столбцов
-      if first_line:
-        #print(row)
-        first_line = False
-        for idx, cell in enumerate(row):
-          col = norm_col(cell)
-          if col == 'Тип':
-            iType = idx
-          if col == 'Имя в интерфейсе':
-            iName = idx
-          if col == 'Наименование сигнала':
-            iNameSig = idx
-          if col == 'sig':
-            iN = idx
-          if col == 'N':
-            iNS = idx
-          if col in ('MQTT name', 'Путь MQTT'):
-            iMqtt = idx
-          if col == 'Группа':
-            iGrp = idx
-          if col == 'Logic':
-            iLogic = idx
-          if col == 'Модуль':
-            iModule = idx
-          if col == 'Я.':
-            iBox = idx
-          if col == 'Вкладка':
-            iTab = idx
-        continue
+    # next() consumes the first row as the CSV header; 
+    # the loop below starts from the second row
+    indices = parse_signals_csv_header(next(datareader))
 
-      # выкачиваем все строки в signals_list
+    for row in datareader:
       for idx, cell in enumerate(row):
         item = {
-          'n': row[iN].strip().replace('.', '_'), # глобальный уникальный индификатор
-          'ns': row[iNS], # номер сигнала в ящике
-          'name': row[iName].strip(),
-          'namesig': row[iNameSig].strip(),
-          'group': row[iGrp].strip(),
-          'mqtt': row[iMqtt].strip(),
-          #'logic': row[iLogic],
-          'type': row[iType],
-          'module': row[iModule],
-          'box': row[iBox],
-          'b_m': str(row[iBox])+'_'+str(row[iModule]),
+          'n': row[indices['sig']].strip().replace('.', '_'), # глобальный уникальный индификатор
+          'ns': row[indices['ns']], # номер сигнала в ящике
+          'name': row[indices['name']].strip(),
+          'namesig': row[indices['namesig']].strip(),
+          'group': row[indices['group']].strip(),
+          'mqtt': row[indices['mqtt']].strip(),
+          #'logic': row[indices['logic']],
+          'type': row[indices['type']],
+          'module': row[indices['module']],
+          'box': row[indices['box']],
+          'b_m': str(row[indices['box']])+'_'+str(row[indices['module']]),
           'system': False,
-          'tab': row[iTab],
+          'tab': row[indices['tab']],
         }
         if item['name']=='':
           item['name'] = item['namesig']
 
-        if (idx==iType) and (cell=='DI'):
+        if (idx == indices['type']) and (cell == 'DI'):
           item['sysname'] = 'binary_sensor.'+item['n']
           signals_list.append(item)
-        if (idx==iType) and (cell=='DO'):
+        if (idx == indices['type']) and (cell == 'DO'):
           item['sysname'] = 'switch.'+item['n']
           signals_list.append(item)
 
