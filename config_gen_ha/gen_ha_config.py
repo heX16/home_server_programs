@@ -22,7 +22,7 @@ from pathlib import Path
 from docopt import docopt
 from transliterate import translit
 
-OUTPUT_SUBDIRS = ('sensors_binary', 'switches', 'customize', 'groups')
+OUTPUT_SUBDIRS = ('mqtt', 'customize', 'groups')
 
 
 
@@ -116,22 +116,24 @@ def ha_gen_customize_node(item):
 
 # item: n,name,mqtt
 def ha_gen_binary_sensor_node(item):
-  # Example:
-  #- platform: mqtt
-  #  name: 2
-  #  friendly_name: Вкл 2
-  #  state_topic: "extbus/8/15/r"
-  #  payload_on: '1'
-  #  payload_off: '0'
-  data = {
-    'platform': 'mqtt',
-    'name': item['n'],
-    'friendly_name': item['name'],
-    'state_topic': item['mqtt']+'/r',
-    'payload_on': '1',
-    'payload_off': '0'
+  # MQTT integration (list per item) style:
+  # - binary_sensor:
+  #     name: '...'
+  #     unique_id: '...'
+  #     object_id: '...'
+  #     state_topic: '...'
+  #     payload_on: '1'
+  #     payload_off: '0'
+  return {
+    'binary_sensor': {
+      'name': item['name'],
+      'unique_id': f'di_{item["n"]}',
+      'object_id': item['n'],
+      'state_topic': item['mqtt'] + '/r',
+      'payload_on': '1',
+      'payload_off': '0',
+    }
   }
-  return data
 
 # item: n,name,mqtt
 def ha_gen_switch_node(item):
@@ -154,16 +156,18 @@ def ha_gen_switch_node(item):
   #    ('retain', True)
   #  ])
   #pprint.pprint(item, width=5)
-  data = {
-    'platform': 'mqtt',
-    'name': item['n'],
-    'state_topic': item['mqtt']+'/r',
-    'command_topic': item['mqtt']+'/w',
-    'payload_on':  '1',
-    'payload_off': '0',
-    'retain': True
+  return {
+    'switch': {
+      'name': item['name'],
+      'unique_id': f'do_{item["n"]}',
+      'object_id': item['n'],
+      'state_topic': item['mqtt'] + '/r',
+      'command_topic': item['mqtt'] + '/w',
+      'payload_on': '1',
+      'payload_off': '0',
+      'retain': True,
+    }
   }
-  return data
 
 
 def duplicate_do_as_system_switch(n):
@@ -279,14 +283,22 @@ def ha_gen_configs(signals_list, group_data, out_dir):
   # Write YAML file
   ensure_output_dirs(out_dir)
 
-  # сохраняем список DI
+  # MQTT manual entities (Home Assistant integration `mqtt:`), list-per-item style.
   di_nodes = list(map(ha_gen_binary_sensor_node, filter(lambda x: x['type'] == 'DI', signals_list)))
-  with io.open(out_dir / 'sensors_binary' / 'sensors_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
+  do_nodes = list(map(ha_gen_switch_node, filter(lambda x: (x['type'] == 'DO') and (not x.get('system', False)), signals_list)))
+  do_sys_nodes = list(map(ha_gen_switch_node, filter(lambda x: (x['type'] == 'DO') and (x.get('system', False)), signals_list)))
+
+  with io.open(out_dir / 'mqtt' / 'di.yaml', 'w', encoding='utf-8-sig') as outfile:
       yaml.dump(di_nodes, outfile, default_flow_style=False, allow_unicode=True)
 
-  do_nodes = list(map(ha_gen_switch_node, filter(lambda x: x['type'] == 'DO', signals_list)))
-  with io.open(out_dir / 'switches' / 'switch_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
+  with io.open(out_dir / 'mqtt' / 'do.yaml', 'w', encoding='utf-8-sig') as outfile:
       yaml.dump(do_nodes, outfile, default_flow_style=False, allow_unicode=True)
+
+  with io.open(out_dir / 'mqtt' / 'do_sys.yaml', 'w', encoding='utf-8-sig') as outfile:
+      yaml.dump(do_sys_nodes, outfile, default_flow_style=False, allow_unicode=True)
+
+  with io.open(out_dir / 'mqtt' / 'extra.yaml', 'w', encoding='utf-8-sig') as outfile:
+      yaml.dump([], outfile, default_flow_style=False, allow_unicode=True)
 
   customize_nodes = {}
   for node in map(ha_gen_customize_node, signals_list):

@@ -17,15 +17,33 @@ python gen_ha_config.py --csv="signals.csv" --out="out_ha"
 
 В выходной директории создаются подпапки и файлы:
 
-- **`sensors_binary/sensors_gen.yaml`**
-  - MQTT `binary_sensor` для всех строк CSV с `Тип = DI`.
-- **`switches/switch_gen.yaml`**
-  - MQTT `switch` для всех строк CSV с `Тип = DO`.
-  - Дополнительно: для каждого `DO` создаётся **дубликат** `*_sys` (см. раздел “Системные дубликаты DO”).
+- **`mqtt/di.yaml`**
+  - MQTT `binary_sensor` для всех строк CSV с `Тип = DI` (формат `mqtt:` list-per-item).
+- **`mqtt/do.yaml`**
+  - MQTT `switch` для всех строк CSV с `Тип = DO` (обычные DO, без `*_sys`).
+- **`mqtt/do_sys.yaml`**
+  - MQTT `switch` для системных дублей `*_sys` (см. раздел “Системные дубликаты DO”).
+- **`mqtt/extra.yaml`**
+  - Пустой список (резерв под будущие типы/ручные добавления).
 - **`customize/customize_gen.yaml`**
   - `homeassistant.customize`: выставляет `friendly_name` для каждого сгенерированного entity.
 - **`groups/group_gen.yaml`**
   - `group`: группы для удобной группировки (в основном для DO) + два служебных “all_*”.
+
+Важно: параметры подключения к MQTT брокеру (host/port/user/pass) в актуальном Home Assistant настраиваются через UI
+(Settings → Devices & services → MQTT). YAML тут используется только для ручных MQTT-сущностей.
+
+## Как подключить результат в Home Assistant
+
+Home Assistant ожидает ручные MQTT сущности под ключом `mqtt:`. Для разбиения на несколько файлов используйте официальный
+механизм `!include_dir_merge_list` (каждый файл в каталоге должен быть YAML-списком):
+
+```yaml
+mqtt: !include_dir_merge_list mqtt/
+```
+
+Этот стиль нельзя смешивать с альтернативным стилем `mqtt: { binary_sensor: [...], switch: [...] }`, и нельзя
+разносить `mqtt:` несколькими include-блоками.
 
 ## Как CSV превращается в сущности Home Assistant
 
@@ -71,7 +89,7 @@ python gen_ha_config.py --csv="signals.csv" --out="out_ha"
 
 Ниже — только то, что реально попадает в YAML.
 
-### 1) `binary_sensor` (файл `sensors_binary/sensors_gen.yaml`, строки `Тип = DI`)
+### 1) `binary_sensor` (файл `mqtt/di.yaml`, строки `Тип = DI`)
 
 - **`sig`**
   - влияет на: `name` (внутреннее имя в платформе) и на `entity_id` через `binary_sensor.<n>`
@@ -87,11 +105,12 @@ python gen_ha_config.py --csv="signals.csv" --out="out_ha"
 
 Также жёстко задаются:
 
-- `platform: mqtt`
 - `payload_on: '1'`
 - `payload_off: '0'`
+- `unique_id` (стабильный идентификатор сущности)
+- `object_id` (чтобы `entity_id` был детерминированным при регенерации)
 
-### 2) `switch` (файл `switches/switch_gen.yaml`, строки `Тип = DO`)
+### 2) `switch` (файл `mqtt/do.yaml` и `mqtt/do_sys.yaml`, строки `Тип = DO`)
 
 - **`sig`**
   - влияет на: `name` и на `entity_id` через `switch.<n>`
@@ -104,12 +123,14 @@ python gen_ha_config.py --csv="signals.csv" --out="out_ha"
 
 Также жёстко задаются:
 
-- `platform: mqtt`
 - `payload_on: '1'`
 - `payload_off: '0'`
 - `retain: true`
+- `unique_id` (стабильный идентификатор сущности)
+- `object_id` (чтобы `entity_id` был детерминированным при регенерации)
 
-Важно: `friendly_name` для `switch` выставляется не в самом `switch_gen.yaml`, а через `customize` (см. ниже).
+Важно: в MQTT YAML используется поле `name` (это friendly name в UI). `customize` можно оставить, но он уже не обязателен,
+если вас устраивают имена из `name`.
 
 ### 3) `customize` (файл `customize/customize_gen.yaml`, все DI и DO, включая `*_sys`)
 
