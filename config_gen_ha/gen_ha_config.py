@@ -1,16 +1,28 @@
-﻿import sys
+﻿"""Generate Home Assistant YAML config from a signals CSV file.
+
+Usage:
+  gen_ha_config.py --csv=<path> --out=<dir>
+  gen_ha_config.py (-h | --help)
+
+Options:
+  --csv=<path>   Input CSV file path.
+  --out=<dir>    Output directory for generated Home Assistant YAML.
+  -h, --help     Show this help message and exit.
+"""
+
+import sys
 import csv
 import io
 import string
 import binascii
 import copy
-import yaml # pip install pyyaml
+import yaml
 import pprint # TEMP
 from pathlib import Path
-from transliterate import translit # pip install transliterate
+from docopt import docopt
+from transliterate import translit
 
-# CONFIG_HA_DIR = Path(__file__).resolve().parent.parent / 'config_ha'
-CONFIG_HA_DIR = Path('config_ha')
+OUTPUT_SUBDIRS = ('sensors_binary', 'switches', 'customize', 'groups')
 
 
 
@@ -139,7 +151,13 @@ def eng_name(t):
   return s
 
 
-def read_signals_list():
+def ensure_output_dirs(out_dir):
+  out_dir.mkdir(parents=True, exist_ok=True)
+  for subdir in OUTPUT_SUBDIRS:
+    (out_dir / subdir).mkdir(parents=True, exist_ok=True)
+
+
+def read_signals_list(csv_path):
   # Read CSV file
   signals_list = []
   iType = None
@@ -154,7 +172,7 @@ def read_signals_list():
   # f = open('test.txt', 'w')
   #f.write('test')
 
-  with open('перечень_сигналов.csv', newline='', encoding="utf-8") as csvfile:
+  with open(csv_path, newline='', encoding='utf-8') as csvfile:
     datareader = csv.reader(csvfile, delimiter=';', quotechar='"')
     first_line = True
     for row in datareader:
@@ -253,35 +271,31 @@ def build_group_data(signals_list):
   }
 
 
-def ha_gen_configs(signals_list, group_data):
+def ha_gen_configs(signals_list, group_data, out_dir):
   # Write YAML file
+  ensure_output_dirs(out_dir)
 
   # сохраняем список DI
   di_nodes = list(map(ha_gen_binary_sensor_node, filter(lambda x: x['type'] == 'DI', signals_list)))
-  with io.open(CONFIG_HA_DIR / 'sensors_binary' / 'sensors_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
+  with io.open(out_dir / 'sensors_binary' / 'sensors_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
       yaml.dump(di_nodes, outfile, default_flow_style=False, allow_unicode=True)
 
   do_nodes = list(map(ha_gen_switch_node, filter(lambda x: x['type'] == 'DO', signals_list)))
-  with io.open(CONFIG_HA_DIR / 'switches' / 'switch_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
+  with io.open(out_dir / 'switches' / 'switch_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
       yaml.dump(do_nodes, outfile, default_flow_style=False, allow_unicode=True)
-
-  #pprint.pprint(signals_list, width=5) ## DBG
 
   customize_nodes = {}
   for node in map(ha_gen_customize_node, signals_list):
     customize_nodes.update(node)
-  with io.open(CONFIG_HA_DIR / 'customize' / 'customize_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
+  with io.open(out_dir / 'customize' / 'customize_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
       yaml.dump(customize_nodes, outfile, default_flow_style=False, allow_unicode=True)
 
   cust_list = group_data['groups_yaml']
 
   # сохраняем список 'скрытых' групп
-  with io.open(CONFIG_HA_DIR / 'groups' / 'group_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
+  with io.open(out_dir / 'groups' / 'group_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
       yaml.dump(cust_list, outfile, default_flow_style=False, allow_unicode=True)
 
-  # автоматизация - отключенно. используется gen_logic.
-  #with io.open('automation.yaml', 'w', encoding='utf8') as outfile:
-  #    yaml.dump(gen_automation_all(), outfile, default_flow_style=False, allow_unicode=True)
 
 
 def append_system_do_duplicates(signals_list):
@@ -305,18 +319,22 @@ def append_system_do_duplicates(signals_list):
 
 
 def main():
-  signals_list = read_signals_list()
+  args = docopt(__doc__)
+  csv_path = Path(args['--csv']).resolve()
+  out_dir = Path(args['--out']).resolve()
+
+  if not csv_path.is_file():
+    print(f'error: CSV file not found: {csv_path}', file=sys.stderr)
+    sys.exit(1)
+
+  signals_list = read_signals_list(csv_path)
   signals_list = append_system_do_duplicates(signals_list)
   group_data = build_group_data(signals_list)
-  ha_gen_configs(signals_list, group_data)
-  print('generate ok')
+  ha_gen_configs(signals_list, group_data, out_dir)
+  print(f'generate ok: {out_dir}')
 
 
 if __name__ == '__main__':
   main()
 
-
-
-
-# https://home-assistant.io/docs/automation/templating/
 
