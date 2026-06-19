@@ -89,7 +89,7 @@ def ha_gen_binary_sensor_node(item):
   # - binary_sensor:
   #     name: '...'
   #     unique_id: '...'
-  #     object_id: '...'
+  #     default_entity_id: binary_sensor.<n>
   #     state_topic: '...'
   #     payload_on: '1'
   #     payload_off: '0'
@@ -97,7 +97,7 @@ def ha_gen_binary_sensor_node(item):
     'binary_sensor': {
       'name': item['name'],
       'unique_id': f'di_{item["n"]}',
-      'object_id': item['n'],
+      'default_entity_id': item['sysname'],
       'state_topic': item['mqtt'] + '/r',
       'payload_on': '1',
       'payload_off': '0',
@@ -118,7 +118,7 @@ def ha_gen_switch_node(item):
     'switch': {
       'name': item['name'],
       'unique_id': f'do_{item["n"]}',
-      'object_id': item['n'],
+      'default_entity_id': item['sysname'],
       'state_topic': item['mqtt'] + '/r',
       'command_topic': item['mqtt'] + '/w',
       'payload_on': '1',

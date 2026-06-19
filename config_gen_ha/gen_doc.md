@@ -153,7 +153,7 @@ views:
 - `payload_on: '1'`
 - `payload_off: '0'`
 - `unique_id` (стабильный идентификатор сущности)
-- `object_id` (чтобы `entity_id` был детерминированным при регенерации)
+- `default_entity_id` (полный entity_id, например `binary_sensor.<n>`; требуется для HA Core 2026.4+, где `object_id` удалён)
 
 ### 2) `switch` (файл `mqtt/do.yaml` и `mqtt/do_sys.yaml`, строки `Тип = DO`)
 
@@ -172,7 +172,7 @@ views:
 - `payload_off: '0'`
 - `retain: true`
 - `unique_id` (стабильный идентификатор сущности)
-- `object_id` (чтобы `entity_id` был детерминированным при регенерации)
+- `default_entity_id` (полный entity_id, например `binary_sensor.<n>`; требуется для HA Core 2026.4+, где `object_id` удалён)
 
 Важно: в MQTT YAML используется поле `name` (это friendly name в UI). `customize` можно оставить, но он уже не обязателен,
 если вас устраивают имена из `name`.
