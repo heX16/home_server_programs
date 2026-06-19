@@ -1,0 +1,6 @@
+address;register;direction;mqtt_path;calc
+8;5;<-;home/hallway/light; v
+8;7;<-;home/hallway/light; v
+1;7;<-;home/hallway/lighttest; not v
+8;1;->;home/temper1; round(v * 0.065, 1)
+8;1;->;home/temper2; round(v * 0.065, 1)
