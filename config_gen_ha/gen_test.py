@@ -17,18 +17,6 @@ CONFIG_HA_DIR = Path('config_ha')
 
 
 
-def regen_list(mylist, myproc):
-  res = []
-  for i in mylist:
-    res.append(myproc(i))
-  return res
-
-def regen_dict(mylist, myproc):
-  res = {}
-  for i in mylist:
-    res.update(myproc(i))
-  return res
-
 def norm_col(cell):
   return cell.strip().split('\n')[0].strip()
 
@@ -368,20 +356,21 @@ def generate_configs(signals_list, group_data):
   # Write YAML file
 
   # сохраняем список DI
+  di_nodes = list(map(gen_binary_sensor_node, filter(lambda x: x['type'] == 'DI', signals_list)))
   with io.open(CONFIG_HA_DIR / 'sensors_binary' / 'sensors_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
-      yaml.dump(regen_list(filter(lambda x: x['type']=='DI', signals_list), gen_binary_sensor_node),
-        outfile, default_flow_style=False, allow_unicode=True)
+      yaml.dump(di_nodes, outfile, default_flow_style=False, allow_unicode=True)
 
+  do_nodes = list(map(gen_switch_node, filter(lambda x: x['type'] == 'DO', signals_list)))
   with io.open(CONFIG_HA_DIR / 'switches' / 'switch_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
-      yaml.dump(regen_list(filter(lambda x: x['type']=='DO', signals_list), gen_switch_node),
-        outfile, default_flow_style=False, allow_unicode=True)
+      yaml.dump(do_nodes, outfile, default_flow_style=False, allow_unicode=True)
 
   #pprint.pprint(signals_list, width=5) ## DBG
 
-  cust_list = {}
-  cust_list.update(regen_dict(signals_list, gen_customize_node))
+  customize_nodes = {}
+  for node in map(gen_customize_node, signals_list):
+    customize_nodes.update(node)
   with io.open(CONFIG_HA_DIR / 'customize' / 'customize_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
-      yaml.dump(cust_list, outfile, default_flow_style=False, allow_unicode=True)
+      yaml.dump(customize_nodes, outfile, default_flow_style=False, allow_unicode=True)
 
   cust_list = group_data['groups_yaml']
 
