@@ -71,7 +71,7 @@ def gen_json_config_node(item, nodetype = "SWITCH"):
 
 
 # items: sysname
-def gen_group(item_list, grp_name, grp_caption = '', is_view = False):
+def ha_gen_group(item_list, grp_name, grp_caption = '', is_view = False):
 #all_sensors:
 #  name: All_DI
 #  view: yes
@@ -100,7 +100,7 @@ def gen_group(item_list, grp_name, grp_caption = '', is_view = False):
 
 # item: n,name,mqtt
 # result: {name: data}
-def gen_customize_node(item):
+def ha_gen_customize_node(item):
   # Example:
   #switch.1:
   #  friendly_name: "ванная"
@@ -111,7 +111,7 @@ def gen_customize_node(item):
   return data
 
 # item: n,name,mqtt
-def gen_binary_sensor_node(item):
+def ha_gen_binary_sensor_node(item):
   # Example:
   #- platform: mqtt
   #  name: 2
@@ -130,7 +130,7 @@ def gen_binary_sensor_node(item):
   return data
 
 # item: n,name,mqtt
-def gen_switch_node(item):
+def ha_gen_switch_node(item):
   # Example:
   #- platform: mqtt
   #  name: 3
@@ -287,11 +287,15 @@ def build_group_data(signals_list):
 
   for grp in grp_list:
     l = filter(lambda fv: fv['group'] == grp, signals_list_sorted)
-    groups_yaml.update(gen_group(l, eng_name(grp), grp))
+    groups_yaml.update(
+        ha_gen_group(l, eng_name(grp), grp))
 
   # system groups
-  groups_yaml.update(gen_group(filter(lambda x: x['type'] == 'DO', signals_list_sorted), 'all_switch'))
-  groups_yaml.update(gen_group(filter(lambda x: x['type'] == 'DI', signals_list_sorted), 'all_binary_sensor'))
+  groups_yaml.update(
+      ha_gen_group(filter(lambda x: x['type'] == 'DO', signals_list_sorted), 'all_switch'))
+
+  groups_yaml.update(
+      ha_gen_group(filter(lambda x: x['type'] == 'DI', signals_list_sorted), 'all_binary_sensor'))
 
   return {
     'signals_list': signals_list_sorted,
@@ -352,22 +356,22 @@ def generate_linear_mqtt_settings(group_data):
         outfile, ensure_ascii=False)
 
 
-def generate_configs(signals_list, group_data):
+def ha_gen_configs(signals_list, group_data):
   # Write YAML file
 
   # сохраняем список DI
-  di_nodes = list(map(gen_binary_sensor_node, filter(lambda x: x['type'] == 'DI', signals_list)))
+  di_nodes = list(map(ha_gen_binary_sensor_node, filter(lambda x: x['type'] == 'DI', signals_list)))
   with io.open(CONFIG_HA_DIR / 'sensors_binary' / 'sensors_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
       yaml.dump(di_nodes, outfile, default_flow_style=False, allow_unicode=True)
 
-  do_nodes = list(map(gen_switch_node, filter(lambda x: x['type'] == 'DO', signals_list)))
+  do_nodes = list(map(ha_gen_switch_node, filter(lambda x: x['type'] == 'DO', signals_list)))
   with io.open(CONFIG_HA_DIR / 'switches' / 'switch_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
       yaml.dump(do_nodes, outfile, default_flow_style=False, allow_unicode=True)
 
   #pprint.pprint(signals_list, width=5) ## DBG
 
   customize_nodes = {}
-  for node in map(gen_customize_node, signals_list):
+  for node in map(ha_gen_customize_node, signals_list):
     customize_nodes.update(node)
   with io.open(CONFIG_HA_DIR / 'customize' / 'customize_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
       yaml.dump(customize_nodes, outfile, default_flow_style=False, allow_unicode=True)
@@ -407,7 +411,7 @@ def main():
   signals_list = read_signals_list()
   signals_list = append_system_do_duplicates(signals_list)
   group_data = build_group_data(signals_list)
-  generate_configs(signals_list, group_data)
+  ha_gen_configs(signals_list, group_data)
   generate_linear_mqtt_settings(group_data)
   print('generate ok')
 
