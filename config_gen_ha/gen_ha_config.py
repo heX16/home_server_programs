@@ -13,18 +13,15 @@ Options:
 import sys
 import csv
 import io
-import string
-import binascii
 import copy
 import yaml
-import pprint # TEMP
 from pathlib import Path
 from docopt import docopt
-from transliterate import translit
 
-OUTPUT_SUBDIRS = ('mqtt', 'customize', 'groups')
+OUTPUT_SUBDIRS = ('mqtt', 'customize', 'lovelace')
 
-
+DASHBOARD_ROOM_RESERVED = 'group_reserved'
+DASHBOARD_ROOM_OTHER = 'Other'
 
 
 def norm_col(cell):
@@ -74,34 +71,6 @@ def parse_signals_csv_header(row):
   return indices
 
 
-# items: sysname
-def ha_gen_group(item_list, grp_name, grp_caption = '', is_view = False):
-#all_sensors:
-#  name: All_DI
-#  view: yes
-#  entities:
-#    - binary_sensor.6101
-#    - binary_sensor.6102
-#    ...
-  if is_view:
-    is_view = 'yes'
-  else:
-    is_view = 'no'
-  ent = []
-  for i in item_list:
-    ent.append(i['sysname'])
-
-  res = {
-      grp_name: {
-        'view': is_view,
-        'name': grp_caption,
-        'entities': ent
-      }
-  }
-  return res
-
-
-
 # item: n,name,mqtt
 # result: {name: data}
 def ha_gen_customize_node(item):
@@ -145,17 +114,6 @@ def ha_gen_switch_node(item):
   #  payload_on:  "1"
   #  payload_off: "0"
   #  retain: true
-  # пытался сделать упорядочненный массив, но не вышло - yaml не знает этот класс
-  #  data = collections.OrderedDict([
-  #    ('platform', 'mqtt'),
-  #    ('name', item['n']),
-  #    ('state_topic', item['mqtt']+'/r'),
-  #    ('command_topic', item['mqtt']+'/w'),
-  #    ('payload_on',  '1'),
-  #    ('payload_off', '0'),
-  #    ('retain', True)
-  #  ])
-  #pprint.pprint(item, width=5)
   return {
     'switch': {
       'name': item['name'],
@@ -174,9 +132,8 @@ def duplicate_do_as_system_switch(n):
   """
   Create a "system" duplicate of a DO item.
 
-  Home Assistant groups do not support per-group friendly names cleanly, so we duplicate
-  DO switches and put them into a separate technical view (tab 'Sys') with generated names.
-  See: https://community.home-assistant.io/t/group-specific-friendly-name/12816/26
+  System switches use technical names (box/signal metadata) and are written to mqtt/do_sys.yaml.
+  They are excluded from the generated Lovelace rooms dashboard.
   """
 
   n['n']=n['n']+'_sys'
@@ -185,17 +142,67 @@ def duplicate_do_as_system_switch(n):
   n['group'] = 'Box'+n['box']
   n['tab'] = 'Sys'
   n['system'] = True
-  return n;
+  return n
 
 
-def eng_name(t):
-  s = translit(t.strip(), 'ru', reversed=True).lower()
-  s = s.replace("\'", '')
-  s = s.replace("-", '_')
-  s = s.replace(" ", '_')
-  f = '_' + string.ascii_letters + string.digits
-  s = ''.join(list(filter(lambda c: c in f, s)))
-  return s
+def room_name_for_dashboard(item):
+  """Map CSV group column to a Lovelace room card title."""
+  group = str(item.get('group', '')).strip()
+  if group == DASHBOARD_ROOM_RESERVED:
+    return None
+  if not group:
+    return DASHBOARD_ROOM_OTHER
+  return group
+
+
+def dashboard_sort_key(item):
+  """Stable sort inside a room: by box, signal number, then entity id."""
+  box = str(item.get('box', ''))
+  ns = str(item.get('ns', ''))
+  try:
+    ns_num = int(ns)
+  except (TypeError, ValueError):
+    ns_num = ns
+  return (box, ns_num, item.get('n', ''))
+
+
+def build_lovelace_rooms_dashboard(signals_list):
+  """
+  Build Lovelace dashboard YAML: one view with entities cards per room.
+
+  Includes only non-system DO switches. Rooms come from the CSV `Группа` column.
+  """
+  rooms = {}
+  for item in signals_list:
+    if item['type'] != 'DO':
+      continue
+    if item.get('system', False):
+      continue
+    room = room_name_for_dashboard(item)
+    if room is None:
+      continue
+    rooms.setdefault(room, []).append(item)
+
+  cards = []
+  for room in sorted(rooms.keys()):
+    entities = sorted(rooms[room], key=dashboard_sort_key)
+    cards.append({
+      'type': 'entities',
+      'title': room,
+      'entities': [entity['sysname'] for entity in entities],
+    })
+
+  return {
+    'title': 'Rooms (generated)',
+    'views': [
+      {
+        'title': 'Комнаты',
+        'path': 'rooms',
+        'icon': 'mdi:floor-plan',
+        'cards': cards,
+      }
+    ],
+  }
 
 
 def ensure_output_dirs(out_dir):
@@ -210,7 +217,7 @@ def read_signals_list(csv_path):
 
   with open(csv_path, newline='', encoding='utf-8') as csvfile:
     datareader = csv.reader(csvfile, delimiter=';', quotechar='"')
-    # next() consumes the first row as the CSV header; 
+    # next() consumes the first row as the CSV header;
     # the loop below starts from the second row
     indices = parse_signals_csv_header(next(datareader))
 
@@ -244,42 +251,7 @@ def read_signals_list(csv_path):
   return signals_list
 
 
-def build_group_data(signals_list):
-  signals_list_sorted = sorted(signals_list, key=lambda x: x['group'])
-
-  # unique group names (only DO groups)
-  grp_set = set(list(map(lambda i: str(i['group']).strip(), filter(lambda x: x['type'] == 'DO', signals_list_sorted))))
-  grp_set.discard('')
-  grp_set.discard('group_reserved')
-  grp_list = list(sorted(grp_set))
-
-  # unique tab names (only DO tabs)
-  tab_set = set(list(map(lambda i: str(i['tab']).strip(), filter(lambda x: x['type'] == 'DO', signals_list_sorted))))
-  tab_set.discard('')
-  tab_list = list(sorted(tab_set))
-
-  groups_yaml = {}
-
-  for grp in grp_list:
-    l = filter(lambda fv: fv['group'] == grp, signals_list_sorted)
-    groups_yaml.update(
-        ha_gen_group(l, eng_name(grp), grp))
-
-  # system groups
-  groups_yaml.update(
-      ha_gen_group(filter(lambda x: x['type'] == 'DO', signals_list_sorted), 'all_switch'))
-
-  groups_yaml.update(
-      ha_gen_group(filter(lambda x: x['type'] == 'DI', signals_list_sorted), 'all_binary_sensor'))
-
-  return {
-    'signals_list': signals_list_sorted,
-    'tab_list': tab_list,
-    'groups_yaml': groups_yaml,
-  }
-
-
-def ha_gen_configs(signals_list, group_data, out_dir):
+def ha_gen_configs(signals_list, out_dir):
   # Write YAML file
   ensure_output_dirs(out_dir)
 
@@ -306,19 +278,16 @@ def ha_gen_configs(signals_list, group_data, out_dir):
   with io.open(out_dir / 'customize' / 'customize_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
       yaml.dump(customize_nodes, outfile, default_flow_style=False, allow_unicode=True)
 
-  cust_list = group_data['groups_yaml']
-
-  # сохраняем список 'скрытых' групп
-  with io.open(out_dir / 'groups' / 'group_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
-      yaml.dump(cust_list, outfile, default_flow_style=False, allow_unicode=True)
-
+  lovelace_dashboard = build_lovelace_rooms_dashboard(signals_list)
+  with io.open(out_dir / 'lovelace' / 'rooms-generated.yaml', 'w', encoding='utf-8-sig') as outfile:
+      yaml.dump(lovelace_dashboard, outfile, default_flow_style=False, allow_unicode=True)
 
 
 def append_system_do_duplicates(signals_list):
   """
   Duplicate all DO items and append them back into `signals_list` as "system" switches.
 
-  This is used to create an additional, purely technical view/grouping of switches:
+  This is used to create an additional, purely technical set of switches:
   - the duplicated items get a modified `n`/`sysname` suffix (`*_sys`)
   - a generated `name` based on box/signal metadata
   - a forced `tab` = 'Sys' and `system` = True
@@ -345,12 +314,9 @@ def main():
 
   signals_list = read_signals_list(csv_path)
   signals_list = append_system_do_duplicates(signals_list)
-  group_data = build_group_data(signals_list)
-  ha_gen_configs(signals_list, group_data, out_dir)
+  ha_gen_configs(signals_list, out_dir)
   print(f'generate ok: {out_dir}')
 
 
 if __name__ == '__main__':
   main()
-
-
