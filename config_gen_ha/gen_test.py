@@ -8,7 +8,11 @@ import random
 import yaml # pip install pyyaml
 import json
 import pprint # TEMP
+from pathlib import Path
 from transliterate import translit # pip install transliterate
+
+# CONFIG_HA_DIR = Path(__file__).resolve().parent.parent / 'config_ha'
+CONFIG_HA_DIR = Path('config_ha')
 
 
 
@@ -24,6 +28,9 @@ def regen_dict(mylist, myproc):
   for i in mylist:
     res.update(myproc(i))
   return res
+
+def norm_col(cell):
+  return cell.strip().split('\n')[0].strip()
 
 def gen_json_config_header(headtext):
   return {
@@ -186,7 +193,7 @@ iTab = None
 # f = open('test.txt', 'w')
 #f.write('test')
 
-with open('../doc/перечень_сигналов.csv', newline='', encoding="utf-8") as csvfile:
+with open('перечень_сигналов.csv', newline='', encoding="utf-8") as csvfile:
   datareader = csv.reader(csvfile, delimiter=';', quotechar='"')
   first_line = True
   for row in datareader:
@@ -195,27 +202,28 @@ with open('../doc/перечень_сигналов.csv', newline='', encoding="
       #print(row)
       first_line = False
       for idx, cell in enumerate(row):
-        if cell=='Тип':
+        col = norm_col(cell)
+        if col == 'Тип':
           iType = idx
-        if cell=='Имя в интерфейсе':
+        if col == 'Имя в интерфейсе':
           iName = idx
-        if cell=='Наименование сигнала':
+        if col == 'Наименование сигнала':
           iNameSig = idx
-        if cell=='sig':
+        if col == 'sig':
           iN = idx
-        if cell=='N':
+        if col == 'N':
           iNS = idx
-        if cell=='MQTT name':
+        if col in ('MQTT name', 'Путь MQTT'):
           iMqtt = idx
-        if cell=='Группа':
+        if col == 'Группа':
           iGrp = idx
-        if cell=='Logic':
+        if col == 'Logic':
           iLogic = idx
-        if cell=='Модуль':
+        if col == 'Модуль':
           iModule = idx
-        if cell=='Я.':
+        if col == 'Я.':
           iBox = idx
-        if cell=='Вкладка':
+        if col == 'Вкладка':
           iTab = idx
       continue
 
@@ -254,7 +262,7 @@ with open('../doc/перечень_сигналов.csv', newline='', encoding="
 # Write YAML file
 
 # сохраняем список DI
-with io.open('../config_ha/sensors_binary/sensors_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
+with io.open(CONFIG_HA_DIR / 'sensors_binary' / 'sensors_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
     yaml.dump(regen_list(filter(lambda x: x['type']=='DI', signals_list), gen_binary_sensor_node),
       outfile, default_flow_style=False, allow_unicode=True)
 
@@ -275,7 +283,7 @@ tmp_list = list(
       filter(lambda x: x['type']=='DO', signals_list))))
 signals_list.extend(tmp_list)
 
-with io.open('../config_ha/switches/switch_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
+with io.open(CONFIG_HA_DIR / 'switches' / 'switch_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
     yaml.dump(regen_list(filter(lambda x: x['type']=='DO', signals_list), gen_switch_node),
       outfile, default_flow_style=False, allow_unicode=True)
 
@@ -283,7 +291,7 @@ with io.open('../config_ha/switches/switch_gen.yaml', 'w', encoding='utf-8-sig')
 
 cust_list = {}
 cust_list.update(regen_dict(signals_list, gen_customize_node))
-with io.open('../config_ha/customize/customize_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
+with io.open(CONFIG_HA_DIR / 'customize' / 'customize_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
     yaml.dump(cust_list, outfile, default_flow_style=False, allow_unicode=True)
 
 # сортируем по группам #####################
@@ -329,7 +337,7 @@ cust_list.update(gen_group(filter(lambda x: x['type']=='DO', signals_list), 'all
 cust_list.update(gen_group(filter(lambda x: x['type']=='DI', signals_list), 'all_binary_sensor'))
 
 # сохраняем список 'скрытых' групп
-with io.open('../config_ha/groups/group_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
+with io.open(CONFIG_HA_DIR / 'groups' / 'group_gen.yaml', 'w', encoding='utf-8-sig') as outfile:
     yaml.dump(cust_list, outfile, default_flow_style=False, allow_unicode=True)
 
 
