@@ -53,6 +53,28 @@ def run_shutdown_command() -> None:
     subprocess.run(['sudo', 'shutdown', '-h', 'now'], check=False)
 
 
+def compute_pause_s(
+    *,
+    shutdown_started: bool,
+    flash_until_at: Optional[float],
+    hold_started_at: Optional[float],
+    shutdown_toggle_every_s: float,
+) -> float:
+    if shutdown_started:
+        pause_s = 0.02
+        if shutdown_toggle_every_s < pause_s:
+            pause_s = shutdown_toggle_every_s
+        return pause_s
+
+    if flash_until_at is not None:
+        return 0.01
+
+    if hold_started_at is not None:
+        return 0.5
+
+    return 0.5
+
+
 def main() -> None:
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(LED_PIN, GPIO.OUT)
@@ -139,17 +161,12 @@ def main() -> None:
                 if flash_until_at is None:
                     set_brightness(pwm, NORMAL_BASE_BRIGHTNESS)
 
-            # Variable sleep duration (simple + readable).
-            pause_s = 0.05
-
-            if shutdown_started:
-                pause_s = min(pause_s, 0.005, shutdown_toggle_every_s)
-
-            if not shutdown_started and flash_until_at is not None:
-                pause_s = min(pause_s, 0.005)
-
-            if not shutdown_started and hold_started_at is not None:
-                pause_s = min(pause_s, 0.02)
+            pause_s = compute_pause_s(
+                shutdown_started=shutdown_started,
+                flash_until_at=flash_until_at,
+                hold_started_at=hold_started_at,
+                shutdown_toggle_every_s=shutdown_toggle_every_s,
+            )
 
             time.sleep(pause_s)
 
