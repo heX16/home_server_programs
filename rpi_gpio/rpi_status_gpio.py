@@ -1,6 +1,7 @@
 import subprocess
 import time
 from typing import Optional
+from threading import Lock
 
 import RPi.GPIO as GPIO
 
@@ -24,14 +25,13 @@ HOLD_TO_SHUTDOWN_S = 5.0
 # Shutdown pattern: blink 10 times per second
 SHUTDOWN_BLINK_HZ = 10.0
 
-# Debounce: require stable input state for this duration
-BUTTON_DEBOUNCE_S = 0.05
+# Debounce for the interrupt callback (milliseconds)
+BUTTON_BOUNCETIME_MS = 50
 
 # Your wiring is inverted for LED brightness:
 # - 100% brightness -> duty 0
 # - 0% brightness   -> duty 100
 LED_BRIGHTNESS_IS_INVERTED = True
-
 
 def _clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
@@ -74,12 +74,30 @@ def main() -> None:
     shutdown_next_toggle_at: Optional[float] = None
     shutdown_blink_on = False
 
-    # Button debounce + hold tracking (active-low button: 0 = pressed)
-    raw_state = GPIO.input(BUTTON_PIN)
-    debounced_state = raw_state
-    last_raw_state = raw_state
-    last_raw_change_at = now
-    hold_started_at: Optional[float] = None
+    # Button hold tracking via interrupts (active-low button: 0 = pressed)
+    lock = Lock()
+    button_pressed = GPIO.input(BUTTON_PIN) == 0
+    pressed_started_at: Optional[float] = now if button_pressed else None
+
+    def button_callback(channel: int) -> None:
+        nonlocal button_pressed, pressed_started_at
+        state = GPIO.input(BUTTON_PIN)
+        pressed_now = state == 0
+        ts = time.monotonic()
+        with lock:
+            if pressed_now and not button_pressed:
+                button_pressed = True
+                pressed_started_at = ts
+            elif not pressed_now and button_pressed:
+                button_pressed = False
+                pressed_started_at = None
+
+    GPIO.add_event_detect(
+        BUTTON_PIN,
+        GPIO.BOTH,
+        callback=button_callback,
+        bouncetime=BUTTON_BOUNCETIME_MS,
+    )
 
     print('rpi_status_gpio started')
 
@@ -87,20 +105,10 @@ def main() -> None:
         while True:
             now = time.monotonic()
 
-            # --- Button debounce ---
-            raw_state = GPIO.input(BUTTON_PIN)
-            if raw_state != last_raw_state:
-                last_raw_state = raw_state
-                last_raw_change_at = now
-
-            if (now - last_raw_change_at) >= BUTTON_DEBOUNCE_S and debounced_state != last_raw_state:
-                debounced_state = last_raw_state
-                if debounced_state == 0:
-                    hold_started_at = now
-                else:
-                    hold_started_at = None
-
             # --- Hold-to-shutdown ---
+            with lock:
+                hold_started_at = pressed_started_at
+
             if not shutdown_started and hold_started_at is not None:
                 if (now - hold_started_at) >= HOLD_TO_SHUTDOWN_S:
                     shutdown_started = True
@@ -131,12 +139,25 @@ def main() -> None:
                 if flash_until_at is None:
                     set_brightness(pwm, NORMAL_BASE_BRIGHTNESS)
 
-            time.sleep(0.01)
+            # Variable sleep duration (simple + readable).
+            pause_s = 0.05
+
+            if shutdown_started:
+                pause_s = min(pause_s, 0.005, shutdown_toggle_every_s)
+
+            if not shutdown_started and flash_until_at is not None:
+                pause_s = min(pause_s, 0.005)
+
+            if not shutdown_started and hold_started_at is not None:
+                pause_s = min(pause_s, 0.02)
+
+            time.sleep(pause_s)
 
     except KeyboardInterrupt:
         pass
     finally:
         try:
+            GPIO.remove_event_detect(BUTTON_PIN)
             pwm.stop()
         finally:
             GPIO.cleanup()
