@@ -1,0 +1,17 @@
+[Unit]
+Description=Raspberry Pi status LED + shutdown button
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/hspro/rpi_gpio
+ExecStart=/usr/bin/python3 /opt/hspro/rpi_gpio/rpi_status_gpio.py
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+
