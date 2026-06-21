@@ -9,8 +9,11 @@ import RPi.GPIO as GPIO
 
 class BlinkPattern(Enum):
     # Pattern names describe the flash rate (flashes per interval).
-    # Timing is interpreted as: BASE for (period - FLASH_PULSE_MS), then FLASH for FLASH_PULSE_MS.
+    # Patterns are defined in phases:
+    # - BASE phase: base brightness (may include pauses between flashes)
+    # - FLASH phase: flash brightness
     FLASH_1F_2S = auto()
+    FLASH_2F_2S = auto()
     FLASH_10F_1S = auto()
 
 
@@ -73,11 +76,36 @@ def compute_pause_s_and_brightness(
     flash_brightness_pct = 100.0
     flash_pulse_ms = 50
 
-    flash_1f_2s_period_ms = 2000
+    flash_2s_period_ms = 2000
+    inter_flash_pause_ms = 100
     flash_10f_1s_period_ms = 100
 
+    if blink_pattern == BlinkPattern.FLASH_2F_2S:
+        period_ms = flash_2s_period_ms
+        flash_ms = flash_pulse_ms
+        phase_ms = t_ms % period_ms
+
+        flash1_end = flash_ms
+        gap_end = flash_ms + inter_flash_pause_ms
+        flash2_end = (2 * flash_ms) + inter_flash_pause_ms
+
+        if phase_ms < flash1_end:
+            remaining_ms = flash1_end - phase_ms
+            return remaining_ms / 1000.0, flash_brightness_pct
+
+        if phase_ms < gap_end:
+            remaining_ms = gap_end - phase_ms
+            return remaining_ms / 1000.0, base_brightness_pct
+
+        if phase_ms < flash2_end:
+            remaining_ms = flash2_end - phase_ms
+            return remaining_ms / 1000.0, flash_brightness_pct
+
+        remaining_ms = period_ms - phase_ms
+        return remaining_ms / 1000.0, base_brightness_pct
+
     period_by_pattern_ms = {
-        BlinkPattern.FLASH_1F_2S: flash_1f_2s_period_ms,
+        BlinkPattern.FLASH_1F_2S: flash_2s_period_ms,
         BlinkPattern.FLASH_10F_1S: flash_10f_1s_period_ms,
     }
 
