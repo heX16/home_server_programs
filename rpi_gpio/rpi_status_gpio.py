@@ -31,6 +31,7 @@ class BlinkPattern(Enum):
 
 
 class ButtonEvent(Enum):
+    NOT_DEFINED = auto()
     NONE = auto()
     PRESSED = auto()
     RELEASED = auto()
@@ -114,6 +115,12 @@ def blink_pattern_from_name(value: str) -> BlinkPattern:
     return BlinkPattern[value.upper()]
 
 
+def button_event_from_name(value: str) -> Optional[ButtonEvent]:
+    if value.lower() == 'none' or value.lower() == '':
+        return None
+    return ButtonEvent[value.upper()]
+
+
 # Button enabled:
 # - True (default): monitor button pin and support hold-to-shutdown
 # - False: LED only, no button GPIO or hold-to-shutdown
@@ -130,6 +137,10 @@ def blink_pattern_from_name(value: str) -> BlinkPattern:
 # - 'inet': full internet access
 # - 'local': local network only
 # - 'none': no connection (also used for 'fail' and unknown statuses)
+# Button hold actions (ButtonEvent that triggers each action):
+# - 'HOLD_2S': release after 2-4s hold
+# - 'HOLD_5S': still pressed at 5s
+# - 'none': disabled
 options = {
     'button': True,
     'led_pin': 18,
@@ -138,6 +149,8 @@ options = {
     'internet_check_no_inet_interval_s': 60.0,
     'led_brightness_is_inverted': True,
     'button_is_inverted': False,
+    'button_shutdown': 'HOLD_5S',
+    'button_reboot': '',
     'blink_pattern_inet': 'FLASH_1F_2S',
     'blink_pattern_local': 'FLASH_3F_2S',
     'blink_pattern_none': 'FLASH_5F_3S',
@@ -177,6 +190,10 @@ def set_brightness(pwm: GPIO.PWM, percent: float) -> None:
 def run_shutdown_command() -> None:
     # Note: this typically requires root privileges or sudo NOPASSWD.
     subprocess.run(['sudo', 'shutdown', '-h', 'now'], check=False)
+
+
+def run_reboot_command() -> None:
+    subprocess.run(['sudo', 'reboot'], check=False)
 
 
 # Internet check mode: 'nmcli' or 'ping'
@@ -411,7 +428,9 @@ def run_test_mode(
 
 
 def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event, button_state: ButtonState) -> None:
-    shutdown_process = False
+    button_action_triggered = False
+    shutdown_button_event = button_event_from_name(options['button_shutdown'])
+    reboot_button_event = button_event_from_name(options['button_reboot'])
     current_blink_pattern = blink_pattern_from_name(options['blink_pattern_inet'])
     next_internet_check_at = time.monotonic() + 1.0
 
@@ -420,7 +439,7 @@ def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event, button_state: ButtonStat
     while not shutdown_event.is_set():
         now = time.monotonic()
 
-        if not shutdown_process and now >= next_internet_check_at:
+        if not button_action_triggered and now >= next_internet_check_at:
             status = check_internet_status(internet_check_mode)
             print(f'Internet check ({internet_check_mode}): {status}')
             current_blink_pattern = blink_pattern_for_internet_status(status)
@@ -432,18 +451,27 @@ def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event, button_state: ButtonStat
 
         if options['button']:
             event = button_state.analyze_event(now)
-            if event == ButtonEvent.HOLD_2S:
-                print('Button held 2-4s')
-            elif not shutdown_process and event == ButtonEvent.HOLD_5S:
-                shutdown_process = True
-                current_blink_pattern = BlinkPattern.FLASH_10F_1S
-                print('Shutdown requested (button held)')
-                run_shutdown_command()
+            
+            if not button_action_triggered:
+                if shutdown_button_event is not None and event == shutdown_button_event:
+                    button_action_triggered = True
+                    current_blink_pattern = BlinkPattern.FLASH_10F_1S
+                    print('Shutdown requested')
+                    run_shutdown_command()
+                elif reboot_button_event is not None and event == reboot_button_event:
+                    button_action_triggered = True
+                    current_blink_pattern = BlinkPattern.FLASH_10F_1S
+                    print('Reboot requested')
+                    run_reboot_command()
+                elif event == ButtonEvent.HOLD_2S:
+                    print('Button held 2-4s')
+                elif event == ButtonEvent.HOLD_5S:
+                    print('Button held 5s')
 
         pause_s = _update_led_and_get_pause(pwm, current_blink_pattern, now)
 
-        if button_state.button_pressed_now:
-            # Poll frequently while the button is held so hold-to-shutdown is detected promptly.
+        if button_state.is_button_pressed():
+            # Poll frequently while the button is held so hold events are detected promptly.
             pause_s = min(pause_s, 0.5)
 
         loop_event.wait(timeout=pause_s)
