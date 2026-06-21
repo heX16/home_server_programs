@@ -12,6 +12,9 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory=/opt/hspro/rpi_gpio
+# Optional: --allow-cfg-cmd allows executing commands specified in the config file.
+# Enable it only if you explicitly rely on cfg-driven commands and you understand the security implications.
+# Example: ExecStart=.../rpi_status_gpio.py --options /opt/hspro/rpi_gpio/options.yaml --allow-cfg-cmd
 ExecStart=/usr/bin/python3 /opt/hspro/rpi_gpio/rpi_status_gpio.py
 TimeoutStopSec=6s
 Restart=on-failure
