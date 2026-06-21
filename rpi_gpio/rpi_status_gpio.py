@@ -321,76 +321,66 @@ def run_test_mode(
     test_pattern: BlinkPattern,
     shutdown_event: Event,
 ) -> None:
+    prev_button_pressed = button_pressed
+
     print(f'rpi_status_gpio started (test mode: {test_pattern.name})')
+
     while not shutdown_event.is_set():
+        if options['button']:
+            hold_started_at: Optional[float] = None
+            with lock:
+                hold_started_at = pressed_started_at
+            button_pressed_now = hold_started_at is not None
+            if button_pressed_now and not prev_button_pressed:
+                print('Button pressed')
+            elif not button_pressed_now and prev_button_pressed:
+                print('Button released')
+            prev_button_pressed = button_pressed_now
+
         pause_s = _update_led_and_get_pause(pwm, test_pattern, time.monotonic())
-        shutdown_event.wait(timeout=pause_s)
+        loop_event.wait(timeout=pause_s)
+        loop_event.clear()
 
 
 def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event) -> None:
-    global button_pressed, pressed_started_at
-
-    button_bouncetime_ms = 50
-
     shutdown_process = False
     current_blink_pattern = blink_pattern_from_name(options['blink_pattern_inet'])
     next_internet_check_at = time.monotonic() + 1.0
 
-    loop_event.clear()
-    _register_shutdown_signals(shutdown_event, loop_event)
-
-    button_pressed = False
-    pressed_started_at = None
-
-    if options['button']:
-        button_pressed = gpio_state_is_pressed(GPIO.input(options['button_pin']))
-        pressed_started_at = time.monotonic() if button_pressed else None
-
-        GPIO.add_event_detect(
-            options['button_pin'],
-            GPIO.BOTH,
-            callback=button_callback,
-            bouncetime=button_bouncetime_ms,
-        )
-
     print('rpi_status_gpio started')
 
-    try:
-        while not shutdown_event.is_set():
-            now = time.monotonic()
+    while not shutdown_event.is_set():
+        now = time.monotonic()
 
-            if not shutdown_process and now >= next_internet_check_at:
-                status = check_internet_status(internet_check_mode)
-                print(f'Internet check ({internet_check_mode}): {status}')
-                current_blink_pattern = blink_pattern_for_internet_status(status)
-                if status == 'inet':
-                    check_interval_s = options['internet_check_interval_s']
-                else:
-                    check_interval_s = options['internet_check_no_inet_interval_s']
-                next_internet_check_at = now + check_interval_s
+        if not shutdown_process and now >= next_internet_check_at:
+            status = check_internet_status(internet_check_mode)
+            print(f'Internet check ({internet_check_mode}): {status}')
+            current_blink_pattern = blink_pattern_for_internet_status(status)
+            if status == 'inet':
+                check_interval_s = options['internet_check_interval_s']
+            else:
+                check_interval_s = options['internet_check_no_inet_interval_s']
+            next_internet_check_at = now + check_interval_s
 
-            hold_started_at: Optional[float] = None
-            if options['button'] and not shutdown_process:
-                with lock:
-                    hold_started_at = pressed_started_at
-                if hold_started_at is not None:
-                    if (now - hold_started_at) >= options['hold_to_shutdown_s']:
-                        shutdown_process = True
-                        current_blink_pattern = BlinkPattern.FLASH_10F_1S
-                        print('Shutdown requested (button held)')
-                        run_shutdown_command()
-
-            pause_s = _update_led_and_get_pause(pwm, current_blink_pattern, now)
-
+        hold_started_at: Optional[float] = None
+        if options['button'] and not shutdown_process:
+            with lock:
+                hold_started_at = pressed_started_at
             if hold_started_at is not None:
-                # Poll frequently while the button is held so hold-to-shutdown is detected promptly.
-                pause_s = min(pause_s, 0.5)
+                if (now - hold_started_at) >= options['hold_to_shutdown_s']:
+                    shutdown_process = True
+                    current_blink_pattern = BlinkPattern.FLASH_10F_1S
+                    print('Shutdown requested (button held)')
+                    run_shutdown_command()
 
-            loop_event.wait(timeout=pause_s)
-            loop_event.clear()
-    finally:
-        if options['button']:
-            GPIO.remove_event_detect(options['button_pin'])
+        pause_s = _update_led_and_get_pause(pwm, current_blink_pattern, now)
+
+        if hold_started_at is not None:
+            # Poll frequently while the button is held so hold-to-shutdown is detected promptly.
+            pause_s = min(pause_s, 0.5)
+
+        loop_event.wait(timeout=pause_s)
+        loop_event.clear()
 
 
 def parse_blink_pattern(value: str) -> BlinkPattern:
@@ -409,7 +399,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         '--test',
         type=parse_blink_pattern,
         metavar='BlinkPattern',
-        help='Run the given BlinkPattern immediately (no button monitoring)',
+        help='Run the given BlinkPattern immediately',
     )
     return parser.parse_args(argv)
 
@@ -434,13 +424,30 @@ def main(argv: Optional[list[str]] = None) -> None:
 
     shutdown_event = Event()
 
+    loop_event.clear()
+    _register_shutdown_signals(shutdown_event, loop_event)
+
+    global button_pressed, pressed_started_at
+    button_pressed = False
+    pressed_started_at = None
+    if options['button']:
+        button_pressed = gpio_state_is_pressed(GPIO.input(options['button_pin']))
+        pressed_started_at = time.monotonic() if button_pressed else None
+        GPIO.add_event_detect(
+            options['button_pin'],
+            GPIO.BOTH,
+            callback=button_callback,
+            bouncetime=50,
+        )
+
     try:
         if test_mode:
-            _register_shutdown_signals(shutdown_event)
             run_test_mode(pwm, test_pattern, shutdown_event)
         else:
             run_main_mode(pwm, shutdown_event)
     finally:
+        if options['button']:
+            GPIO.remove_event_detect(options['button_pin'])
         try:
             set_brightness(pwm, 0)
             pwm.stop()
