@@ -23,6 +23,9 @@ class BlinkPattern(Enum):
 
 
 # Button hold time to start shutdown
+# Button enabled:
+# - True (default): monitor button pin and support hold-to-shutdown
+# - False: LED only, no button GPIO or hold-to-shutdown
 # Your wiring is inverted for LED brightness:
 # - 100% brightness -> duty 0
 # - 0% brightness   -> duty 100
@@ -30,12 +33,18 @@ class BlinkPattern(Enum):
 # - False (default): active-low, pull-up, pressed when GPIO reads 0
 # - True: active-high, pull-down, pressed when GPIO reads 1
 options = {
+    'button': True,
     'led_pin': 18,
     'button_pin': 4,
     'hold_to_shutdown_s': 5.0,
     'led_brightness_is_inverted': True,
     'button_is_inverted': False,
 }
+
+lock = Lock()
+loop_event = Event()
+button_pressed = False
+pressed_started_at: Optional[float] = None
 
 def _clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
@@ -51,6 +60,21 @@ def brightness_percent_to_duty(percent: float) -> float:
 def gpio_state_is_pressed(state: int) -> bool:
     pressed_level = 1 if options['button_is_inverted'] else 0
     return state == pressed_level
+
+
+def button_callback(channel: int) -> None:
+    global button_pressed, pressed_started_at
+    state = GPIO.input(options['button_pin'])
+    pressed_now = gpio_state_is_pressed(state)
+    ts = time.monotonic()
+    with lock:
+        if pressed_now and not button_pressed:
+            button_pressed = True
+            pressed_started_at = ts
+        elif not pressed_now and button_pressed:
+            button_pressed = False
+            pressed_started_at = None
+    loop_event.set()
 
 
 def set_brightness(pwm: GPIO.PWM, percent: float) -> None:
@@ -250,38 +274,29 @@ def run_test_mode(
 
 
 def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event) -> None:
+    global button_pressed, pressed_started_at
+
     button_bouncetime_ms = 50
 
     shutdown_process = False
     current_blink_pattern = BlinkPattern.FLASH_1F_2S
 
-    lock = Lock()
-    loop_event = Event()
+    loop_event.clear()
     _register_shutdown_signals(shutdown_event, loop_event)
 
-    button_pressed = gpio_state_is_pressed(GPIO.input(options['button_pin']))
-    pressed_started_at: Optional[float] = time.monotonic() if button_pressed else None
+    button_pressed = False
+    pressed_started_at = None
 
-    def button_callback(channel: int) -> None:
-        nonlocal button_pressed, pressed_started_at
-        state = GPIO.input(options['button_pin'])
-        pressed_now = gpio_state_is_pressed(state)
-        ts = time.monotonic()
-        with lock:
-            if pressed_now and not button_pressed:
-                button_pressed = True
-                pressed_started_at = ts
-            elif not pressed_now and button_pressed:
-                button_pressed = False
-                pressed_started_at = None
-        loop_event.set()
+    if options['button']:
+        button_pressed = gpio_state_is_pressed(GPIO.input(options['button_pin']))
+        pressed_started_at = time.monotonic() if button_pressed else None
 
-    GPIO.add_event_detect(
-        options['button_pin'],
-        GPIO.BOTH,
-        callback=button_callback,
-        bouncetime=button_bouncetime_ms,
-    )
+        GPIO.add_event_detect(
+            options['button_pin'],
+            GPIO.BOTH,
+            callback=button_callback,
+            bouncetime=button_bouncetime_ms,
+        )
 
     print('rpi_status_gpio started')
 
@@ -290,7 +305,7 @@ def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event) -> None:
             now = time.monotonic()
 
             hold_started_at: Optional[float] = None
-            if not shutdown_process:
+            if options['button'] and not shutdown_process:
                 with lock:
                     hold_started_at = pressed_started_at
                 if hold_started_at is not None:
@@ -302,13 +317,14 @@ def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event) -> None:
 
             pause_s = _update_led_and_get_pause(pwm, current_blink_pattern, now)
 
-            if not shutdown_process and hold_started_at is not None:
+            if options['button'] and not shutdown_process and hold_started_at is not None:
                 pause_s = min(pause_s, 0.2)
 
             loop_event.wait(timeout=pause_s)
             loop_event.clear()
     finally:
-        GPIO.remove_event_detect(options['button_pin'])
+        if options['button']:
+            GPIO.remove_event_detect(options['button_pin'])
 
 
 def parse_blink_pattern(value: str) -> BlinkPattern:
@@ -345,7 +361,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     pwm = GPIO.PWM(options['led_pin'], pwm_hz)
     pwm.start(brightness_percent_to_duty(0))
 
-    if not test_mode:
+    if options['button']:
         # Button
         pull = GPIO.PUD_DOWN if options['button_is_inverted'] else GPIO.PUD_UP
         GPIO.setup(options['button_pin'], GPIO.IN, pull_up_down=pull)
