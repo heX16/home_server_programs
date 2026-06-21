@@ -1,3 +1,4 @@
+import argparse
 import subprocess
 import time
 from enum import Enum, auto
@@ -128,10 +129,35 @@ def compute_pause_s_and_brightness(
     return remaining_ms / 1000.0, base_brightness_pct
 
 
-def main() -> None:
+def parse_blink_pattern(value: str) -> BlinkPattern:
+    try:
+        return BlinkPattern[value]
+    except KeyError:
+        allowed = ', '.join(p.name for p in BlinkPattern)
+        raise argparse.ArgumentTypeError(
+            f'Invalid blink pattern: {value}. Allowed values: {allowed}'
+        )
+
+
+def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description='Raspberry Pi status LED + shutdown button')
+    parser.add_argument(
+        '--test',
+        type=parse_blink_pattern,
+        metavar='BlinkPattern',
+        help='Run the given BlinkPattern immediately (no button monitoring)',
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: Optional[list[str]] = None) -> None:
     pwm_hz = 100
     # Debounce for the interrupt callback (milliseconds)
     button_bouncetime_ms = 50
+
+    args = parse_args(argv)
+    test_pattern: Optional[BlinkPattern] = args.test
+    test_mode = test_pattern is not None
 
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(options['led_pin'], GPIO.OUT)
@@ -141,50 +167,61 @@ def main() -> None:
     pwm = GPIO.PWM(options['led_pin'], pwm_hz)
     pwm.start(brightness_percent_to_duty(0))
 
-    blink_pattern = BlinkPattern.FLASH_1F_2S
+    blink_pattern = test_pattern or BlinkPattern.FLASH_1F_2S
 
     # Button hold tracking via interrupts
     lock = Lock()
     loop_event = Event()
-    button_pressed = gpio_state_is_pressed(GPIO.input(options['button_pin']))
-    pressed_started_at: Optional[float] = time.monotonic() if button_pressed else None
+    button_pressed = False
+    pressed_started_at: Optional[float] = None
+    button_event_enabled = False
 
-    def button_callback(channel: int) -> None:
-        nonlocal button_pressed, pressed_started_at
-        state = GPIO.input(options['button_pin'])
-        pressed_now = gpio_state_is_pressed(state)
-        ts = time.monotonic()
-        with lock:
-            if pressed_now and not button_pressed:
-                button_pressed = True
-                pressed_started_at = ts
-            elif not pressed_now and button_pressed:
-                button_pressed = False
-                pressed_started_at = None
-        loop_event.set()
+    if not test_mode:
+        button_pressed = gpio_state_is_pressed(GPIO.input(options['button_pin']))
+        pressed_started_at = time.monotonic() if button_pressed else None
 
-    GPIO.add_event_detect(
-        options['button_pin'],
-        GPIO.BOTH,
-        callback=button_callback,
-        bouncetime=button_bouncetime_ms,
-    )
+        def button_callback(channel: int) -> None:
+            nonlocal button_pressed, pressed_started_at
+            state = GPIO.input(options['button_pin'])
+            pressed_now = gpio_state_is_pressed(state)
+            ts = time.monotonic()
+            with lock:
+                if pressed_now and not button_pressed:
+                    button_pressed = True
+                    pressed_started_at = ts
+                elif not pressed_now and button_pressed:
+                    button_pressed = False
+                    pressed_started_at = None
+            loop_event.set()
 
-    print('rpi_status_gpio started')
+        GPIO.add_event_detect(
+            options['button_pin'],
+            GPIO.BOTH,
+            callback=button_callback,
+            bouncetime=button_bouncetime_ms,
+        )
+        button_event_enabled = True
+
+    if test_mode:
+        print(f'rpi_status_gpio started (test mode: {blink_pattern.name})')
+    else:
+        print('rpi_status_gpio started')
 
     try:
         while True:
             now = time.monotonic()
 
             # --- Hold-to-shutdown ---
-            with lock:
-                hold_started_at = pressed_started_at
+            hold_started_at: Optional[float] = None
+            if not test_mode:
+                with lock:
+                    hold_started_at = pressed_started_at
 
-            if blink_pattern == BlinkPattern.FLASH_1F_2S and hold_started_at is not None:
-                if (now - hold_started_at) >= options['hold_to_shutdown_s']:
-                    blink_pattern = BlinkPattern.FLASH_10F_1S
-                    print('Shutdown requested (button held)')
-                    run_shutdown_command()
+                if blink_pattern == BlinkPattern.FLASH_1F_2S and hold_started_at is not None:
+                    if (now - hold_started_at) >= options['hold_to_shutdown_s']:
+                        blink_pattern = BlinkPattern.FLASH_10F_1S
+                        print('Shutdown requested (button held)')
+                        run_shutdown_command()
 
             now_ms = int(now * 1000.0) % 60_000
             pause_s, brightness = compute_pause_s_and_brightness(
@@ -193,17 +230,21 @@ def main() -> None:
             )
             set_brightness(pwm, brightness)
 
-            if hold_started_at is not None:
-                pause_s = min(pause_s, 0.2)
+            if test_mode:
+                time.sleep(pause_s)
+            else:
+                if hold_started_at is not None:
+                    pause_s = min(pause_s, 0.2)
 
-            loop_event.wait(timeout=pause_s)
-            loop_event.clear()
+                loop_event.wait(timeout=pause_s)
+                loop_event.clear()
 
     except KeyboardInterrupt:
         pass
     finally:
         try:
-            GPIO.remove_event_detect(options['button_pin'])
+            if button_event_enabled:
+                GPIO.remove_event_detect(options['button_pin'])
             pwm.stop()
         finally:
             GPIO.cleanup()
