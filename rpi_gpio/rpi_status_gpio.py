@@ -327,16 +327,19 @@ def run_test_mode(
     print(f'rpi_status_gpio started (test mode: {test_pattern.name})')
 
     while not shutdown_event.is_set():
-        if options['button']:
-            event = button_state.analyze_event(time.monotonic())
-            if event == ButtonEvent.PRESSED:
-                print('Button pressed')
-            elif event == ButtonEvent.RELEASED:
-                print('Button released')
-            elif event == ButtonEvent.HOLD_2S:
-                print('Button held 2-4s')
+        now = time.monotonic()
 
-        pause_s = _update_led_and_get_pause(pwm, test_pattern, time.monotonic())
+        if options['button']:
+            event = button_state.analyze_event(now)
+            if event != ButtonEvent.NO_EVENT:
+                print(event.name)
+
+        pause_s = _update_led_and_get_pause(pwm, test_pattern, now)
+
+        if button_state.is_button_pressed():
+            # Poll frequently while the button is held so hold events are detected promptly.
+            pause_s = min(pause_s, 0.5)
+
         loop_event.wait(timeout=pause_s)
         loop_event.clear()
 
@@ -370,17 +373,14 @@ def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event, button_state: ButtonStat
                 if event == shutdown_button_event:
                     button_action_triggered = True
                     current_blink_pattern = BlinkPattern.FLASH_10F_1S
-                    print('Shutdown requested')
                     run_shutdown_command()
                 elif event == reboot_button_event:
                     button_action_triggered = True
                     current_blink_pattern = BlinkPattern.FLASH_10F_1S
-                    print('Reboot requested')
                     run_reboot_command()
-                elif event == ButtonEvent.HOLD_2S:
-                    print('Button held 2-4s')
-                elif event == ButtonEvent.HOLD_5S:
-                    print('Button held 5s')
+
+            if event != ButtonEvent.NO_EVENT:
+                print(event.name)
 
         pause_s = _update_led_and_get_pause(pwm, current_blink_pattern, now)
 

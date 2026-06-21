@@ -51,6 +51,13 @@ class TestButtonState(unittest.TestCase):
             [ButtonEvent.PRESSED, ButtonEvent.HOLD_5S, ButtonEvent.RELEASED],
         )
 
+    def test_hold_10s_emits_pressed_hold_5s_once_then_released(self):
+        events = simulate_press_release(10.0)
+        self.assertEqual(
+            events,
+            [ButtonEvent.PRESSED, ButtonEvent.HOLD_5S, ButtonEvent.RELEASED],
+        )
+
     def test_hold_2s_boundary_is_hold_2s(self):
         events = simulate_press_release(2.0)
         self.assertEqual(events, [ButtonEvent.PRESSED, ButtonEvent.HOLD_2S])
