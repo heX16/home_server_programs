@@ -13,6 +13,7 @@ User=root
 Group=root
 WorkingDirectory=/opt/hspro/rpi_gpio
 ExecStart=/usr/bin/python3 /opt/hspro/rpi_gpio/rpi_status_gpio.py
+TimeoutStopSec=6s
 Restart=on-failure
 RestartSec=2
 

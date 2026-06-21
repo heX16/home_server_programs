@@ -1,4 +1,5 @@
 import argparse
+import os
 import signal
 import subprocess
 import time
@@ -71,6 +72,18 @@ options = {
 }
 
 loop_event = Event()
+
+
+def systemd_shutdown_in_progress() -> bool:
+    """
+    Return True if systemd is in the shutdown/reboot phase.
+
+    We intentionally rely on /run markers (tmpfs) so the check still works even
+    after normal filesystems are unmounted.
+    """
+    shutdown_dir = '/run/systemd/shutdown'
+    scheduled = '/run/systemd/shutdown/scheduled'
+    return os.path.isdir(shutdown_dir) or os.path.exists(scheduled)
 
 
 def _clamp(value: float, lo: float, hi: float) -> float:
@@ -303,13 +316,39 @@ def _update_led_and_get_pause(
     return pause_s
 
 
-def _register_shutdown_signals(shutdown_event: Event, loop_event: Optional[Event] = None) -> None:
+def run_shutdown_grace_blink(
+    pwm: GPIO.PWM,
+    *,
+    seconds: float,
+    loop_event: Optional[Event] = None,
+) -> None:
+    end_at = time.monotonic() + max(0.0, seconds)
+    blink_pattern = BlinkPattern.FLASH_10F_1S
+
+    while time.monotonic() < end_at:
+        now = time.monotonic()
+        pause_s = _update_led_and_get_pause(pwm, blink_pattern, now)
+        if loop_event is not None:
+            loop_event.wait(timeout=pause_s)
+            loop_event.clear()
+        else:
+            time.sleep(pause_s)
+
+
+def _register_shutdown_signals(
+    shutdown_event: Event,
+    *,
+    shutdown_grace_event: Optional[Event] = None,
+    loop_event: Optional[Event] = None,
+) -> None:
     def handle_shutdown_signal(signum: int, frame) -> None:
         try:
             signame = signal.Signals(signum).name
         except ValueError:
             signame = str(signum)
         print(f'rpi_status_gpio stopping ({signame})')
+        if signum == signal.SIGTERM and shutdown_grace_event is not None and systemd_shutdown_in_progress():
+            shutdown_grace_event.set()
         shutdown_event.set()
         if loop_event is not None:
             loop_event.set()
@@ -322,6 +361,7 @@ def run_test_mode(
     pwm: GPIO.PWM,
     test_pattern: BlinkPattern,
     shutdown_event: Event,
+    shutdown_grace_event: Event,
     button_state: ButtonState,
 ) -> None:
     print(f'rpi_status_gpio started (test mode: {test_pattern.name})')
@@ -343,8 +383,11 @@ def run_test_mode(
         loop_event.wait(timeout=pause_s)
         loop_event.clear()
 
+    if shutdown_grace_event.is_set():
+        run_shutdown_grace_blink(pwm, seconds=3.0, loop_event=loop_event)
 
-def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event, button_state: ButtonState) -> None:
+
+def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event, shutdown_grace_event: Event, button_state: ButtonState) -> None:
     button_action_triggered = False
     shutdown_button_event = ButtonEvent.from_name(options['button_shutdown'])
     reboot_button_event = ButtonEvent.from_name(options['button_reboot'])
@@ -391,6 +434,9 @@ def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event, button_state: ButtonStat
         loop_event.wait(timeout=pause_s)
         loop_event.clear()
 
+    if shutdown_grace_event.is_set():
+        run_shutdown_grace_blink(pwm, seconds=3.0, loop_event=loop_event)
+
 
 def parse_blink_pattern(value: str) -> BlinkPattern:
     try:
@@ -432,9 +478,10 @@ def main(argv: Optional[list[str]] = None) -> None:
         GPIO.setup(options['button_pin'], GPIO.IN, pull_up_down=pull)
 
     shutdown_event = Event()
+    shutdown_grace_event = Event()
 
     loop_event.clear()
-    _register_shutdown_signals(shutdown_event, loop_event)
+    _register_shutdown_signals(shutdown_event, shutdown_grace_event=shutdown_grace_event, loop_event=loop_event)
 
     button_state = ButtonState(enabled=options['button'])
     if options['button']:
@@ -451,9 +498,9 @@ def main(argv: Optional[list[str]] = None) -> None:
 
     try:
         if test_mode:
-            run_test_mode(pwm, test_pattern, shutdown_event, button_state)
+            run_test_mode(pwm, test_pattern, shutdown_event, shutdown_grace_event, button_state)
         else:
-            run_main_mode(pwm, shutdown_event, button_state)
+            run_main_mode(pwm, shutdown_event, shutdown_grace_event, button_state)
     finally:
         if options['button']:
             GPIO.remove_event_detect(options['button_pin'])
