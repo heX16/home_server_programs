@@ -62,6 +62,87 @@ def run_shutdown_command() -> None:
     subprocess.run(['sudo', 'shutdown', '-h', 'now'], check=False)
 
 
+# Internet check mode: 'nmcli' or 'ping'
+internet_check_mode: str = 'nmcli'
+
+
+def _check_via_nmcli() -> str:
+    try:
+        result = subprocess.run(
+            ['nmcli', 'networking', 'connectivity'],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except FileNotFoundError:
+        return 'fail'
+
+    if result.returncode != 0:
+        return 'fail'
+
+    connectivity = result.stdout.strip().lower()
+    if connectivity == 'full':
+        return 'inet'
+    if connectivity in ('limited', 'portal'):
+        return 'local'
+    if connectivity in ('none', 'unknown'):
+        return 'none'
+    return 'none'
+
+
+def _has_default_gateway() -> bool:
+    try:
+        result = subprocess.run(
+            ['ip', 'route'],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return False
+
+    if result.returncode != 0:
+        return False
+
+    return 'default' in result.stdout
+
+
+def _check_via_ping() -> str:
+    try:
+        result = subprocess.run(
+            ['ping', '-c', '1', '-W', '2', '8.8.8.8'],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except FileNotFoundError:
+        return 'fail'
+
+    if result.returncode == 0:
+        return 'inet'
+
+    if _has_default_gateway():
+        return 'local'
+    return 'none'
+
+
+def check_internet_status(mode: str) -> str:
+    """
+    Return internet connectivity status for the given check mode.
+
+    Status values:
+    - 'none': no network connection
+    - 'local': local network only, no internet access
+    - 'inet': full internet access
+    - 'fail': the requested check command is unavailable
+    """
+    if mode == 'nmcli':
+        return _check_via_nmcli()
+    if mode == 'ping':
+        return _check_via_ping()
+    return 'fail'
+
+
 def compute_pause_s_and_brightness(
     *,
     blink_pattern: BlinkPattern,
