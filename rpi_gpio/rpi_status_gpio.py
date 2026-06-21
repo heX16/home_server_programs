@@ -13,13 +13,23 @@ class BlinkPattern(Enum):
     # Pattern names describe the flash rate (flashes per interval).
     # Patterns are defined in phases:
     # - BASE phase: base brightness (may include pauses between flashes)
-    # - FLASH phase: flash brightness
+    # - FLASH phase: flash brightness (100% for FLASH_*, 0% for BLACK_*)
     FLASH_1F_2S = auto()
     FLASH_2F_2S = auto()
     FLASH_3F_2S = auto()
     FLASH_4F_3S = auto()
     FLASH_5F_3S = auto()
     FLASH_10F_1S = auto()
+    BLACK_1F_2S = auto()
+    BLACK_2F_2S = auto()
+    BLACK_3F_2S = auto()
+    BLACK_4F_3S = auto()
+    BLACK_5F_3S = auto()
+    BLACK_10F_1S = auto()
+
+
+def blink_pattern_from_name(value: str) -> BlinkPattern:
+    return BlinkPattern[value.upper()]
 
 
 # Button hold time to start shutdown
@@ -35,6 +45,10 @@ class BlinkPattern(Enum):
 # Internet connectivity check intervals in main mode (seconds between checks):
 # - when internet is available (status 'inet'): every 10 minutes
 # - when internet is not available: every 1 minute
+# LED blink patterns for internet status:
+# - 'inet': full internet access
+# - 'local': local network only
+# - 'none': no connection (also used for 'fail' and unknown statuses)
 options = {
     'button': True,
     'led_pin': 18,
@@ -44,6 +58,9 @@ options = {
     'internet_check_no_inet_interval_s': 60.0,
     'led_brightness_is_inverted': True,
     'button_is_inverted': False,
+    'blink_pattern_inet': 'FLASH_1F_2S',
+    'blink_pattern_local': 'FLASH_3F_2S',
+    'blink_pattern_none': 'FLASH_5F_3S',
 }
 
 lock = Lock()
@@ -174,10 +191,10 @@ def check_internet_status(mode: str) -> str:
 
 def blink_pattern_for_internet_status(status: str) -> BlinkPattern:
     if status == 'inet':
-        return BlinkPattern.FLASH_1F_2S
+        return blink_pattern_from_name(options['blink_pattern_inet'])
     if status == 'local':
-        return BlinkPattern.FLASH_4F_3S
-    return BlinkPattern.FLASH_5F_3S
+        return blink_pattern_from_name(options['blink_pattern_local'])
+    return blink_pattern_from_name(options['blink_pattern_none'])
 
 
 def compute_pause_s_and_brightness(
@@ -194,28 +211,52 @@ def compute_pause_s_and_brightness(
     # LED pattern semantics:
     # Each blink pattern is a 2-phase cycle:
     # - BASE phase: keep base_brightness_pct for (period_ms - flash_2s_pulse_ms)
-    # - FLASH phase: keep flash_brightness_pct for flash_2s_pulse_ms
+    # - FLASH phase: keep pulse_brightness_pct for flash_2s_pulse_ms
     base_brightness_pct = 10.0
-    flash_brightness_pct = 100.0
 
     flash_2s_pulse_ms = 100
     inter_flash_pause_ms = 300
 
-    flashes_in_2s_by_pattern = {
+    pulse_brightness_by_pattern = {
+        BlinkPattern.FLASH_1F_2S: 100.0,
+        BlinkPattern.FLASH_2F_2S: 100.0,
+        BlinkPattern.FLASH_3F_2S: 100.0,
+        BlinkPattern.FLASH_4F_3S: 100.0,
+        BlinkPattern.FLASH_5F_3S: 100.0,
+        BlinkPattern.FLASH_10F_1S: 100.0,
+        BlinkPattern.BLACK_1F_2S: 0.0,
+        BlinkPattern.BLACK_2F_2S: 0.0,
+        BlinkPattern.BLACK_3F_2S: 0.0,
+        BlinkPattern.BLACK_4F_3S: 0.0,
+        BlinkPattern.BLACK_5F_3S: 0.0,
+        BlinkPattern.BLACK_10F_1S: 0.0,
+    }
+
+    flashes_by_pattern = {
         BlinkPattern.FLASH_1F_2S: 1,
         BlinkPattern.FLASH_2F_2S: 2,
         BlinkPattern.FLASH_3F_2S: 3,
         BlinkPattern.FLASH_4F_3S: 4,
         BlinkPattern.FLASH_5F_3S: 5,
+        BlinkPattern.BLACK_1F_2S: 1,
+        BlinkPattern.BLACK_2F_2S: 2,
+        BlinkPattern.BLACK_3F_2S: 3,
+        BlinkPattern.BLACK_4F_3S: 4,
+        BlinkPattern.BLACK_5F_3S: 5,
     }
 
-    if blink_pattern in flashes_in_2s_by_pattern:
-        if blink_pattern in [BlinkPattern.FLASH_4F_3S, BlinkPattern.FLASH_5F_3S]:
-            period_ms = 3000
-        else:
-            period_ms = 2000
+    three_second_patterns = {
+        BlinkPattern.FLASH_4F_3S,
+        BlinkPattern.FLASH_5F_3S,
+        BlinkPattern.BLACK_4F_3S,
+        BlinkPattern.BLACK_5F_3S,
+    }
 
-        flash_count = flashes_in_2s_by_pattern[blink_pattern]
+    pulse_brightness_pct = pulse_brightness_by_pattern[blink_pattern]
+
+    if blink_pattern in flashes_by_pattern:
+        period_ms = 3000 if blink_pattern in three_second_patterns else 2000
+        flash_count = flashes_by_pattern[blink_pattern]
         phase_ms = t_ms % period_ms
 
         # One "slot" = one flash pulse + the pause that follows it.
@@ -227,7 +268,7 @@ def compute_pause_s_and_brightness(
             pos_in_slot = phase_ms % slot_ms
             if pos_in_slot < flash_2s_pulse_ms:
                 remaining_ms = flash_2s_pulse_ms - pos_in_slot
-                return remaining_ms / 1000.0, flash_brightness_pct
+                return remaining_ms / 1000.0, pulse_brightness_pct
             remaining_ms = slot_ms - pos_in_slot
             return remaining_ms / 1000.0, base_brightness_pct
 
@@ -240,7 +281,7 @@ def compute_pause_s_and_brightness(
 
     if phase_ms < flash_ms:
         remaining_ms = flash_ms - phase_ms
-        return remaining_ms / 1000.0, flash_brightness_pct
+        return remaining_ms / 1000.0, pulse_brightness_pct
 
     remaining_ms = period_ms - phase_ms
     return remaining_ms / 1000.0, base_brightness_pct
@@ -292,7 +333,7 @@ def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event) -> None:
     button_bouncetime_ms = 50
 
     shutdown_process = False
-    current_blink_pattern = BlinkPattern.FLASH_1F_2S
+    current_blink_pattern = blink_pattern_from_name(options['blink_pattern_inet'])
     next_internet_check_at = time.monotonic() + 1.0
 
     loop_event.clear()
@@ -354,7 +395,7 @@ def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event) -> None:
 
 def parse_blink_pattern(value: str) -> BlinkPattern:
     try:
-        return BlinkPattern[value.upper()]
+        return blink_pattern_from_name(value)
     except KeyError:
         allowed = ', '.join(p.name for p in BlinkPattern)
         raise argparse.ArgumentTypeError(
