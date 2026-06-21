@@ -1,4 +1,5 @@
 import argparse
+import signal
 import subprocess
 import time
 from enum import Enum, auto
@@ -82,7 +83,7 @@ def compute_pause_s_and_brightness(
     flash_2s_pulse_ms = 100
     inter_flash_pause_ms = 300
 
-    flash_10f_1s_period_ms = 100
+    flash_10f_1s_period_ms = 50
 
     flashes_in_2s_by_pattern = {
         BlinkPattern.FLASH_1F_2S: 1,
@@ -139,7 +140,7 @@ def parse_blink_pattern(value: str) -> BlinkPattern:
     except KeyError:
         allowed = ', '.join(p.name for p in BlinkPattern)
         raise argparse.ArgumentTypeError(
-            f'Invalid blink pattern: {value}. Allowed values: {allowed}'
+            f'Invalid blink pattern: {value}.\nAllowed values: {allowed}.\n'
         )
 
 
@@ -176,6 +177,20 @@ def main(argv: Optional[list[str]] = None) -> None:
     # Button hold tracking via interrupts
     lock = Lock()
     loop_event = Event()
+    shutdown_event = Event()
+
+    def handle_shutdown_signal(signum: int, frame) -> None:
+        try:
+            signame = signal.Signals(signum).name
+        except ValueError:
+            signame = str(signum)
+        print(f'rpi_status_gpio stopping ({signame})')
+        shutdown_event.set()
+        loop_event.set()
+
+    signal.signal(signal.SIGTERM, handle_shutdown_signal)
+    signal.signal(signal.SIGINT, handle_shutdown_signal)
+
     button_pressed = False
     pressed_started_at: Optional[float] = None
     button_event_enabled = False
@@ -212,7 +227,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         print('rpi_status_gpio started')
 
     try:
-        while True:
+        while not shutdown_event.is_set():
             now = time.monotonic()
 
             # --- Hold-to-shutdown ---
@@ -235,7 +250,7 @@ def main(argv: Optional[list[str]] = None) -> None:
             set_brightness(pwm, brightness)
 
             if test_mode:
-                time.sleep(pause_s)
+                shutdown_event.wait(timeout=pause_s)
             else:
                 if hold_started_at is not None:
                     pause_s = min(pause_s, 0.2)
@@ -243,15 +258,15 @@ def main(argv: Optional[list[str]] = None) -> None:
                 loop_event.wait(timeout=pause_s)
                 loop_event.clear()
 
-    except KeyboardInterrupt:
-        pass
     finally:
         try:
+            set_brightness(pwm, 0)
             if button_event_enabled:
                 GPIO.remove_event_detect(options['button_pin'])
             pwm.stop()
         finally:
             GPIO.cleanup()
+        print('rpi_status_gpio stopped')
 
 
 if __name__ == '__main__':
