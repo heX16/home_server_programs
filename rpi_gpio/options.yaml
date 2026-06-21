@@ -52,6 +52,14 @@ button_reboot: ''
 # Shell command run when button_reboot event fires
 #command_reboot: 'sudo reboot'
 
+# ButtonEvent that triggers command_1 (empty/none to disable)
+#button_cmd_1: RELEASED_HOLD_2S
+# Shell command run when button_cmd_1 event fires
+#command_1: '/path/to/script.sh'
+
+#button_cmd_2: ''
+#command_2: ''
+
 # LED blink pattern when internet is available (BlinkPattern name, e.g. FLASH_1F_2S)
 blink_pattern_inet: FLASH_1F_2S
 # LED blink pattern when only local network is available

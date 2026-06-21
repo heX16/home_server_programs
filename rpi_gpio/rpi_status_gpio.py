@@ -65,6 +65,7 @@ class BlinkPattern(Enum):
 # Shell commands for button actions (typically requires root or sudo NOPASSWD):
 # - 'command_shutdown': run when button_shutdown event fires
 # - 'command_reboot': run when button_reboot event fires
+# - 'command_1' / 'command_2': user-defined custom commands
 options = {
     'button': True,
     'led_pin': 18,
@@ -77,6 +78,10 @@ options = {
     'button_reboot': '',
     'command_shutdown': 'sudo shutdown -h now',
     'command_reboot': 'sudo reboot',
+    'button_cmd_1': '',
+    'command_1': '',
+    'button_cmd_2': '',
+    'command_2': '',
     'blink_pattern_inet': 'FLASH_1F_2S',
     'blink_pattern_local': 'FLASH_3F_2S',
     'blink_pattern_none': 'FLASH_5F_3S',
@@ -130,14 +135,6 @@ def _run_shell_command(command: str) -> None:
     if not argv:
         return
     subprocess.run(argv, check=False)
-
-
-def run_shutdown_command() -> None:
-    _run_shell_command(options['command_shutdown'])
-
-
-def run_reboot_command() -> None:
-    _run_shell_command(options['command_reboot'])
 
 
 # Internet check mode: 'nmcli' or 'ping'
@@ -405,9 +402,8 @@ def run_test_mode(
 
 
 def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event, shutdown_grace_event: Event, button_state: ButtonState) -> None:
-    button_action_triggered = False
-    shutdown_button_event = ButtonEvent.from_name(options['button_shutdown'])
-    reboot_button_event = ButtonEvent.from_name(options['button_reboot'])
+    # Set after shutdown or reboot: keep FLASH_10F_1S and skip further internet checks.
+    shutdown_reboot_triggered = False
     current_blink_pattern = BlinkPattern.from_name(options['blink_pattern_inet'])
     next_internet_check_at = time.monotonic() + 1.0
 
@@ -416,7 +412,7 @@ def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event, shutdown_grace_event: Ev
     while not shutdown_event.is_set():
         now = time.monotonic()
 
-        if not button_action_triggered and now >= next_internet_check_at:
+        if not shutdown_reboot_triggered and now >= next_internet_check_at:
             status = check_internet_status(internet_check_mode)
             print(f'Internet check ({internet_check_mode}): {status}')
             current_blink_pattern = blink_pattern_for_internet_status(status)
@@ -426,21 +422,31 @@ def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event, shutdown_grace_event: Ev
                 check_interval_s = options['internet_check_no_inet_interval_s']
             next_internet_check_at = now + check_interval_s
 
-        if options['button']:
+        if options['button'] and shutdown_reboot_triggered is False:
             event = button_state.analyze_event(now)
+            print(f'Button event: {event.name}')
 
-            if not button_action_triggered:
-                if event == shutdown_button_event:
-                    button_action_triggered = True
-                    current_blink_pattern = BlinkPattern.FLASH_10F_1S
-                    run_shutdown_command()
-                elif event == reboot_button_event:
-                    button_action_triggered = True
-                    current_blink_pattern = BlinkPattern.FLASH_10F_1S
-                    run_reboot_command()
+            button_actions: list[tuple[str, str]] = [
+                ('button_shutdown', 'command_shutdown'),
+                ('button_reboot', 'command_reboot'),
+                ('button_cmd_1', 'command_1'),
+                ('button_cmd_2', 'command_2'),
+            ]
 
-            if event != ButtonEvent.NO_EVENT:
-                print(event.name)
+            # Check all button actions in sequence.
+            for button_key, command_key in button_actions:
+                is_shutdown_reboot = command_key in {'command_shutdown', 'command_reboot'}
+
+                button_event = ButtonEvent.from_name(options[button_key])
+
+                if event = button_event:
+                    print(f'Event {event.name} triggered shell command: {options[command_key]}')
+                    _run_shell_command(options[command_key])
+                    if is_shutdown_reboot:
+                        shutdown_reboot_triggered = True
+                        current_blink_pattern = BlinkPattern.FLASH_10F_1S
+                    # Exit the loop after the button action is triggered.
+                    break
 
         pause_s = _update_led_and_get_pause(pwm, current_blink_pattern, now)
 
@@ -503,7 +509,7 @@ def main(argv: Optional[list[str]] = None) -> None:
                     keys = ', '.join(sorted(command_keys))
                     raise ValueError(
                         f'Options file contains command_* keys ({keys}); '
-                        f'pass --allow-cfg-cmd to override shutdown/reboot commands'
+                        f'pass --allow-cfg-cmd to allow shell command overrides'
                     )
             options.update(yaml_options)
 
