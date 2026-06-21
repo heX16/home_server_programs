@@ -7,27 +7,11 @@ from threading import Lock, Event
 import RPi.GPIO as GPIO
 
 
-PWM_HZ = 100
-
-# Normal operation pattern:
-# - Base brightness stays at 10%
-# - A very short 100% flash happens once every 2 seconds
-NORMAL_BASE_BRIGHTNESS = 10
-NORMAL_FLASH_BRIGHTNESS = 100
-NORMAL_FLASH_INTERVAL_S = 2.0
-NORMAL_FLASH_DURATION_S = 0.06
-
-# Shutdown pattern: blink 10 times per second
-SHUTDOWN_BLINK_HZ = 10.0
-
 
 class BlinkPattern(Enum):
     PATTERN_1 = auto()
     SHUTDOWN = auto()
 
-
-# Debounce for the interrupt callback (milliseconds)
-BUTTON_BOUNCETIME_MS = 50
 
 # Button hold time to start shutdown
 # Your wiring is inverted for LED brightness:
@@ -69,64 +53,57 @@ def run_shutdown_command() -> None:
     subprocess.run(['sudo', 'shutdown', '-h', 'now'], check=False)
 
 
-def compute_pause_s(
+def compute_pause_s_and_brightness(
     *,
     blink_pattern: BlinkPattern,
-    flash_until_at: Optional[float],
-    hold_started_at: Optional[float],
-    shutdown_toggle_every_s: float,
-) -> float:
+    t_ms: int,
+) -> tuple[float, float]:
+    """
+    Return (pause_s, brightness_percent) for the given pattern at time t_ms.
+
+    t_ms is expected to be milliseconds within a minute (0..59999). The function is
+    intentionally pure: it does not touch GPIO and does not maintain any state.
+    """
+
+    # Normal operation pattern:
+    # - Base brightness stays at 10%
+    # - A very short 100% flash happens once every 2 seconds
+    NORMAL_BASE_BRIGHTNESS = 10
+    NORMAL_FLASH_BRIGHTNESS = 100
+    NORMAL_FLASH_INTERVAL_S = 2.0
+    NORMAL_FLASH_DURATION_S = 0.06
+    # Shutdown pattern: blink 10 times per second
+    SHUTDOWN_BLINK_HZ = 10.0
+
     if blink_pattern == BlinkPattern.SHUTDOWN:
-        pause_s = 0.02
-        if shutdown_toggle_every_s < pause_s:
-            pause_s = shutdown_toggle_every_s
-        return pause_s
+        half_period_ms = int(1000.0 / (SHUTDOWN_BLINK_HZ * 2.0))
+        period_ms = half_period_ms * 2
+        phase_ms = t_ms % period_ms
 
-    if flash_until_at is not None:
-        return 0.01
+        if phase_ms < half_period_ms:
+            remaining_ms = half_period_ms - phase_ms
+            return remaining_ms / 1000.0, NORMAL_FLASH_BRIGHTNESS
 
-    if hold_started_at is not None:
-        return 0.5
+        remaining_ms = period_ms - phase_ms
+        return remaining_ms / 1000.0, NORMAL_BASE_BRIGHTNESS
 
-    return 0.5
+    period_ms = int(NORMAL_FLASH_INTERVAL_S * 1000.0)
+    flash_ms = int(NORMAL_FLASH_DURATION_S * 1000.0)
+    phase_ms = t_ms % period_ms
 
+    if phase_ms < flash_ms:
+        remaining_ms = flash_ms - phase_ms
+        return remaining_ms / 1000.0, NORMAL_FLASH_BRIGHTNESS
 
-def update_led_patterns(
-    *,
-    pwm: GPIO.PWM,
-    now: float,
-    blink_pattern: BlinkPattern,
-    next_normal_flash_at: float,
-    flash_until_at: Optional[float],
-    shutdown_next_toggle_at: Optional[float],
-    shutdown_blink_on: bool,
-    shutdown_toggle_every_s: float,
-) -> tuple[float, Optional[float], Optional[float], bool]:
-    if blink_pattern == BlinkPattern.SHUTDOWN:
-        if shutdown_next_toggle_at is None or now >= shutdown_next_toggle_at:
-            shutdown_blink_on = not shutdown_blink_on
-            shutdown_next_toggle_at = now + shutdown_toggle_every_s
-            set_brightness(
-                pwm,
-                NORMAL_FLASH_BRIGHTNESS if shutdown_blink_on else NORMAL_BASE_BRIGHTNESS,
-            )
-    elif blink_pattern == BlinkPattern.PATTERN_1:
-        if flash_until_at is not None and now >= flash_until_at:
-            flash_until_at = None
-            set_brightness(pwm, NORMAL_BASE_BRIGHTNESS)
-
-        if flash_until_at is None and now >= next_normal_flash_at:
-            flash_until_at = now + NORMAL_FLASH_DURATION_S
-            next_normal_flash_at = now + NORMAL_FLASH_INTERVAL_S
-            set_brightness(pwm, NORMAL_FLASH_BRIGHTNESS)
-
-        if flash_until_at is None:
-            set_brightness(pwm, NORMAL_BASE_BRIGHTNESS)
-
-    return next_normal_flash_at, flash_until_at, shutdown_next_toggle_at, shutdown_blink_on
+    remaining_ms = period_ms - phase_ms
+    return remaining_ms / 1000.0, NORMAL_BASE_BRIGHTNESS
 
 
 def main() -> None:
+    PWM_HZ = 100
+    # Debounce for the interrupt callback (milliseconds)
+    BUTTON_BOUNCETIME_MS = 50
+
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(options['led_pin'], GPIO.OUT)
     pull = GPIO.PUD_DOWN if options['button_is_inverted'] else GPIO.PUD_UP
@@ -137,22 +114,11 @@ def main() -> None:
 
     blink_pattern = BlinkPattern.PATTERN_1
 
-    now = time.monotonic()
-
-    # Normal mode scheduling
-    next_normal_flash_at = now + NORMAL_FLASH_INTERVAL_S
-    flash_until_at: Optional[float] = None
-
-    # Shutdown blink scheduling
-    shutdown_toggle_every_s = 1.0 / (SHUTDOWN_BLINK_HZ * 2.0)
-    shutdown_next_toggle_at: Optional[float] = None
-    shutdown_blink_on = False
-
     # Button hold tracking via interrupts
     lock = Lock()
     loop_event = Event()
     button_pressed = gpio_state_is_pressed(GPIO.input(options['button_pin']))
-    pressed_started_at: Optional[float] = now if button_pressed else None
+    pressed_started_at: Optional[float] = time.monotonic() if button_pressed else None
 
     def button_callback(channel: int) -> None:
         nonlocal button_pressed, pressed_started_at
@@ -188,30 +154,18 @@ def main() -> None:
             if blink_pattern == BlinkPattern.PATTERN_1 and hold_started_at is not None:
                 if (now - hold_started_at) >= options['hold_to_shutdown_s']:
                     blink_pattern = BlinkPattern.SHUTDOWN
-                    shutdown_next_toggle_at = now
-                    shutdown_blink_on = False
                     print('Shutdown requested (button held)')
                     run_shutdown_command()
 
-            next_normal_flash_at, flash_until_at, shutdown_next_toggle_at, shutdown_blink_on = (
-                update_led_patterns(
-                    pwm=pwm,
-                    now=now,
-                    blink_pattern=blink_pattern,
-                    next_normal_flash_at=next_normal_flash_at,
-                    flash_until_at=flash_until_at,
-                    shutdown_next_toggle_at=shutdown_next_toggle_at,
-                    shutdown_blink_on=shutdown_blink_on,
-                    shutdown_toggle_every_s=shutdown_toggle_every_s,
-                )
-            )
-
-            pause_s = compute_pause_s(
+            now_ms = int(now * 1000.0) % 60_000
+            pause_s, brightness = compute_pause_s_and_brightness(
                 blink_pattern=blink_pattern,
-                flash_until_at=flash_until_at,
-                hold_started_at=hold_started_at,
-                shutdown_toggle_every_s=shutdown_toggle_every_s,
+                t_ms=now_ms,
             )
+            set_brightness(pwm, brightness)
+
+            if hold_started_at is not None:
+                pause_s = min(pause_s, 0.2)
 
             loop_event.wait(timeout=pause_s)
             loop_event.clear()
