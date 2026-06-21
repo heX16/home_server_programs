@@ -3,6 +3,7 @@ import signal
 import subprocess
 import time
 from enum import Enum, auto
+from functools import partial
 from typing import Optional
 from threading import Lock, Event
 
@@ -26,6 +27,13 @@ class BlinkPattern(Enum):
     BLACK_4F_3S = auto()
     BLACK_5F_3S = auto()
     BLACK_10F_1S = auto()
+
+
+class ButtonEvent(Enum):
+    NONE = auto()
+    PRESSED = auto()
+    RELEASED = auto()
+    HOLD_5S = auto()
 
 
 def blink_pattern_from_name(value: str) -> BlinkPattern:
@@ -63,10 +71,16 @@ options = {
     'blink_pattern_none': 'FLASH_5F_3S',
 }
 
-lock = Lock()
 loop_event = Event()
-button_pressed = False
-pressed_started_at: Optional[float] = None
+
+
+def create_button_state() -> dict:
+    return {
+        'lock': Lock(),
+        'button_pressed': False,
+        'pressed_started_at': None,
+    }
+
 
 def _clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
@@ -84,19 +98,70 @@ def gpio_state_is_pressed(state: int) -> bool:
     return state == pressed_level
 
 
-def button_callback(channel: int) -> None:
-    global button_pressed, pressed_started_at
-    state = GPIO.input(options['button_pin'])
-    pressed_now = gpio_state_is_pressed(state)
+def button_callback(button_state: dict, channel: int) -> None:
+    gpio_state = GPIO.input(options['button_pin'])
+    pressed_now = gpio_state_is_pressed(gpio_state)
     ts = time.monotonic()
-    with lock:
-        if pressed_now and not button_pressed:
-            button_pressed = True
-            pressed_started_at = ts
-        elif not pressed_now and button_pressed:
-            button_pressed = False
-            pressed_started_at = None
+    with button_state['lock']:
+        if pressed_now and not button_state['button_pressed']:
+            button_state['button_pressed'] = True
+            button_state['pressed_started_at'] = ts
+        elif not pressed_now and button_state['button_pressed']:
+            button_state['button_pressed'] = False
+            button_state['pressed_started_at'] = None
     loop_event.set()
+
+
+def analyze_button_event(now: float, state: dict) -> ButtonEvent:
+    """
+    Analyze button press/release/hold and return one event for this loop iteration.
+
+    Required state keys (provided by create_button_state / GPIO callback):
+    - lock: threading.Lock for callback ↔ main loop synchronization
+    - button_pressed: whether the button is currently held down
+    - pressed_started_at: monotonic timestamp when pressed, or None if released
+
+    Keys initialized lazily by this function:
+    - prev_button_pressed, hold_emitted
+
+    Key written on every call:
+    - button_pressed_now
+
+    Returns ButtonEvent.NONE when options['button'] is False.
+    """
+    if not options['button']:
+        return ButtonEvent.NONE
+
+    with state['lock']:
+        hold_started_at = state['pressed_started_at']
+
+    button_pressed_now = hold_started_at is not None
+
+    if 'prev_button_pressed' not in state:
+        state['prev_button_pressed'] = button_pressed_now
+    if 'hold_emitted' not in state:
+        state['hold_emitted'] = False
+
+    prev = state['prev_button_pressed']
+    event = ButtonEvent.NONE
+
+    if (
+        button_pressed_now
+        and hold_started_at is not None
+        and (now - hold_started_at) >= options['hold_to_shutdown_s']
+        and not state['hold_emitted']
+    ):
+        event = ButtonEvent.HOLD_5S
+        state['hold_emitted'] = True
+    elif button_pressed_now and not prev:
+        event = ButtonEvent.PRESSED
+    elif not button_pressed_now and prev:
+        event = ButtonEvent.RELEASED
+        state['hold_emitted'] = False
+
+    state['prev_button_pressed'] = button_pressed_now
+    state['button_pressed_now'] = button_pressed_now
+    return event
 
 
 def set_brightness(pwm: GPIO.PWM, percent: float) -> None:
@@ -320,29 +385,24 @@ def run_test_mode(
     pwm: GPIO.PWM,
     test_pattern: BlinkPattern,
     shutdown_event: Event,
+    button_state: dict,
 ) -> None:
-    prev_button_pressed = button_pressed
-
     print(f'rpi_status_gpio started (test mode: {test_pattern.name})')
 
     while not shutdown_event.is_set():
         if options['button']:
-            hold_started_at: Optional[float] = None
-            with lock:
-                hold_started_at = pressed_started_at
-            button_pressed_now = hold_started_at is not None
-            if button_pressed_now and not prev_button_pressed:
+            event = analyze_button_event(time.monotonic(), button_state)
+            if event == ButtonEvent.PRESSED:
                 print('Button pressed')
-            elif not button_pressed_now and prev_button_pressed:
+            elif event == ButtonEvent.RELEASED:
                 print('Button released')
-            prev_button_pressed = button_pressed_now
 
         pause_s = _update_led_and_get_pause(pwm, test_pattern, time.monotonic())
         loop_event.wait(timeout=pause_s)
         loop_event.clear()
 
 
-def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event) -> None:
+def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event, button_state: dict) -> None:
     shutdown_process = False
     current_blink_pattern = blink_pattern_from_name(options['blink_pattern_inet'])
     next_internet_check_at = time.monotonic() + 1.0
@@ -362,20 +422,17 @@ def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event) -> None:
                 check_interval_s = options['internet_check_no_inet_interval_s']
             next_internet_check_at = now + check_interval_s
 
-        hold_started_at: Optional[float] = None
-        if options['button'] and not shutdown_process:
-            with lock:
-                hold_started_at = pressed_started_at
-            if hold_started_at is not None:
-                if (now - hold_started_at) >= options['hold_to_shutdown_s']:
-                    shutdown_process = True
-                    current_blink_pattern = BlinkPattern.FLASH_10F_1S
-                    print('Shutdown requested (button held)')
-                    run_shutdown_command()
+        if options['button']:
+            event = analyze_button_event(now, button_state)
+            if not shutdown_process and event == ButtonEvent.HOLD_5S:
+                shutdown_process = True
+                current_blink_pattern = BlinkPattern.FLASH_10F_1S
+                print('Shutdown requested (button held)')
+                run_shutdown_command()
 
         pause_s = _update_led_and_get_pause(pwm, current_blink_pattern, now)
 
-        if hold_started_at is not None:
+        if button_state.get('button_pressed_now'):
             # Poll frequently while the button is held so hold-to-shutdown is detected promptly.
             pause_s = min(pause_s, 0.5)
 
@@ -427,30 +484,32 @@ def main(argv: Optional[list[str]] = None) -> None:
     loop_event.clear()
     _register_shutdown_signals(shutdown_event, loop_event)
 
-    global button_pressed, pressed_started_at
-    button_pressed = False
-    pressed_started_at = None
+    button_state = create_button_state()
     if options['button']:
-        button_pressed = gpio_state_is_pressed(GPIO.input(options['button_pin']))
-        pressed_started_at = time.monotonic() if button_pressed else None
+        button_state['button_pressed'] = gpio_state_is_pressed(GPIO.input(options['button_pin']))
+        button_state['pressed_started_at'] = (
+            time.monotonic() if button_state['button_pressed'] else None
+        )
         GPIO.add_event_detect(
             options['button_pin'],
             GPIO.BOTH,
-            callback=button_callback,
+            callback=partial(button_callback, button_state),
             bouncetime=50,
         )
 
     try:
         if test_mode:
-            run_test_mode(pwm, test_pattern, shutdown_event)
+            run_test_mode(pwm, test_pattern, shutdown_event, button_state)
         else:
-            run_main_mode(pwm, shutdown_event)
+            run_main_mode(pwm, shutdown_event, button_state)
     finally:
         if options['button']:
             GPIO.remove_event_detect(options['button_pin'])
         try:
             set_brightness(pwm, 0)
             pwm.stop()
+            # Without this, PWM.__del__ runs after GPIO.cleanup() and raises TypeError in lgpio
+            # (chip handle is already None when the destructor calls stop() again).
             del pwm
         finally:
             GPIO.cleanup()
