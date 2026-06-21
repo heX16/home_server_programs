@@ -1,5 +1,9 @@
 [Unit]
 Description=Raspberry Pi status LED + shutdown button
+# Stop after umount (filesystems already unmounted), but before halt/poweroff/reboot.
+# Also stop late relative to network/logind during shutdown ordering.
+After=umount.target
+Before=network.target systemd-logind.service systemd-halt.service systemd-poweroff.service systemd-reboot.service final.target
 StartLimitIntervalSec=300
 StartLimitBurst=10
 
