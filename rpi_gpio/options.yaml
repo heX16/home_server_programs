@@ -41,10 +41,16 @@ button_is_inverted: false
 # RELEASED_HOLD_2S  — button released after holding 2–4 seconds
 # HOLD_5S           — button still pressed at 5 seconds
 
-# ButtonEvent that runs `sudo shutdown -h now` (RELEASED_HOLD_2S, HOLD_5S, or empty/none to disable)
+# ButtonEvent that triggers command_shutdown (RELEASED_HOLD_2S, HOLD_5S, or empty/none to disable)
 button_shutdown: HOLD_5S
-# ButtonEvent that runs `sudo reboot` (RELEASED_HOLD_2S, HOLD_5S, or empty/none to disable)
+# ButtonEvent that triggers command_reboot (RELEASED_HOLD_2S, HOLD_5S, or empty/none to disable)
 button_reboot: ''
+
+# Shell command run when button_shutdown event fires (requires root or sudo NOPASSWD)
+# `command_*` keys are rejected unless --allow-cfg-cmd is passed on the command line.
+#command_shutdown: 'sudo shutdown -h now'
+# Shell command run when button_reboot event fires
+#command_reboot: 'sudo reboot'
 
 # LED blink pattern when internet is available (BlinkPattern name, e.g. FLASH_1F_2S)
 blink_pattern_inet: FLASH_1F_2S

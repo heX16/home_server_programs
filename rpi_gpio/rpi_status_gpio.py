@@ -1,5 +1,6 @@
 import argparse
 import os
+import shlex
 import signal
 import subprocess
 import time
@@ -61,6 +62,9 @@ class BlinkPattern(Enum):
 # - 'RELEASED_HOLD_2S': release after 2-4s hold
 # - 'HOLD_5S': still pressed at 5s
 # - 'none': disabled
+# Shell commands for button actions (typically requires root or sudo NOPASSWD):
+# - 'command_shutdown': run when button_shutdown event fires
+# - 'command_reboot': run when button_reboot event fires
 options = {
     'button': True,
     'led_pin': 18,
@@ -71,6 +75,8 @@ options = {
     'button_is_inverted': False,
     'button_shutdown': 'HOLD_5S',
     'button_reboot': '',
+    'command_shutdown': 'sudo shutdown -h now',
+    'command_reboot': 'sudo reboot',
     'blink_pattern_inet': 'FLASH_1F_2S',
     'blink_pattern_local': 'FLASH_3F_2S',
     'blink_pattern_none': 'FLASH_5F_3S',
@@ -119,13 +125,19 @@ def set_brightness(pwm: GPIO.PWM, percent: float) -> None:
     pwm.ChangeDutyCycle(brightness_percent_to_duty(percent))
 
 
+def _run_shell_command(command: str) -> None:
+    argv = shlex.split(command)
+    if not argv:
+        return
+    subprocess.run(argv, check=False)
+
+
 def run_shutdown_command() -> None:
-    # Note: this typically requires root privileges or sudo NOPASSWD.
-    subprocess.run(['sudo', 'shutdown', '-h', 'now'], check=False)
+    _run_shell_command(options['command_shutdown'])
 
 
 def run_reboot_command() -> None:
-    subprocess.run(['sudo', 'reboot'], check=False)
+    _run_shell_command(options['command_reboot'])
 
 
 # Internet check mode: 'nmcli' or 'ping'
@@ -466,6 +478,11 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         metavar='FILE',
         help='YAML file with options overrides',
     )
+    parser.add_argument(
+        '--allow-cfg-cmd',
+        action='store_true',
+        help='Allow command_* keys from the options file (rejected by default)',
+    )
     return parser.parse_args(argv)
 
 
@@ -479,7 +496,16 @@ def main(argv: Optional[list[str]] = None) -> None:
             raise ImportError('PyYAML is required when --options is used. Use: `pip install PyYAML`')
 
         with open(args.options, encoding='utf-8') as f:
-            options.update(yaml.safe_load(f) or {})
+            yaml_options = yaml.safe_load(f) or {}
+            if not args.allow_cfg_cmd:
+                command_keys = [key for key in yaml_options if key.startswith('command_')]
+                if command_keys:
+                    keys = ', '.join(sorted(command_keys))
+                    raise ValueError(
+                        f'Options file contains command_* keys ({keys}); '
+                        f'pass --allow-cfg-cmd to override shutdown/reboot commands'
+                    )
+            options.update(yaml_options)
 
     test_pattern: Optional[BlinkPattern] = args.test
     test_mode = test_pattern is not None
