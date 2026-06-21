@@ -422,9 +422,13 @@ def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event, shutdown_grace_event: Ev
                 check_interval_s = options['internet_check_no_inet_interval_s']
             next_internet_check_at = now + check_interval_s
 
-        if options['button'] and shutdown_reboot_triggered is False:
+        if options['button']:
             event = button_state.analyze_event(now)
             print(f'Button event: {event.name}')
+
+            if shutdown_reboot_triggered:
+                # Skip further button actions after shutdown or reboot is triggered.
+                continue
 
             button_actions: list[tuple[str, str]] = [
                 ('button_shutdown', 'command_shutdown'),
@@ -439,12 +443,12 @@ def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event, shutdown_grace_event: Ev
 
                 button_event = ButtonEvent.from_name(options[button_key])
 
-                if event = button_event:
+                if event == button_event:
                     print(f'Event {event.name} triggered shell command: {options[command_key]}')
-                    _run_shell_command(options[command_key])
                     if is_shutdown_reboot:
                         shutdown_reboot_triggered = True
                         current_blink_pattern = BlinkPattern.FLASH_10F_1S
+                    _run_shell_command(options[command_key])
                     # Exit the loop after the button action is triggered.
                     break
 
