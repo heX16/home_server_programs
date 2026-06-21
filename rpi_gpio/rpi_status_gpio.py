@@ -1,7 +1,7 @@
 import subprocess
 import time
 from typing import Optional
-from threading import Lock
+from threading import Lock, Event
 
 import RPi.GPIO as GPIO
 
@@ -108,6 +108,7 @@ def main() -> None:
 
     # Button hold tracking via interrupts
     lock = Lock()
+    loop_event = Event()
     button_pressed = gpio_state_is_pressed(GPIO.input(options['button_pin']))
     pressed_started_at: Optional[float] = now if button_pressed else None
 
@@ -123,6 +124,7 @@ def main() -> None:
             elif not pressed_now and button_pressed:
                 button_pressed = False
                 pressed_started_at = None
+        loop_event.set()
 
     GPIO.add_event_detect(
         options['button_pin'],
@@ -178,7 +180,8 @@ def main() -> None:
                 shutdown_toggle_every_s=shutdown_toggle_every_s,
             )
 
-            time.sleep(pause_s)
+            loop_event.wait(timeout=pause_s)
+            loop_event.clear()
 
     except KeyboardInterrupt:
         pass
