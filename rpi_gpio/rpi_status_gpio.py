@@ -32,11 +32,16 @@ class BlinkPattern(Enum):
 # Your wiring is inverted for the button:
 # - False (default): active-low, pull-up, pressed when GPIO reads 0
 # - True: active-high, pull-down, pressed when GPIO reads 1
+# Internet connectivity check intervals in main mode (seconds between checks):
+# - when internet is available (status 'inet'): every 10 minutes
+# - when internet is not available: every 1 minute
 options = {
     'button': True,
     'led_pin': 18,
     'button_pin': 4,
     'hold_to_shutdown_s': 5.0,
+    'internet_check_interval_s': 600.0,
+    'internet_check_no_inet_interval_s': 60.0,
     'led_brightness_is_inverted': True,
     'button_is_inverted': False,
 }
@@ -280,6 +285,7 @@ def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event) -> None:
 
     shutdown_process = False
     current_blink_pattern = BlinkPattern.FLASH_1F_2S
+    next_internet_check_at = time.monotonic() + 1.0
 
     loop_event.clear()
     _register_shutdown_signals(shutdown_event, loop_event)
@@ -303,6 +309,15 @@ def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event) -> None:
     try:
         while not shutdown_event.is_set():
             now = time.monotonic()
+
+            if not shutdown_process and now >= next_internet_check_at:
+                status = check_internet_status(internet_check_mode)
+                print(f'Internet check ({internet_check_mode}): {status}')
+                if status == 'inet':
+                    check_interval_s = options['internet_check_interval_s']
+                else:
+                    check_interval_s = options['internet_check_no_inet_interval_s']
+                next_internet_check_at = now + check_interval_s
 
             hold_started_at: Optional[float] = None
             if options['button'] and not shutdown_process:
