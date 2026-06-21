@@ -10,6 +10,11 @@ from threading import Event
 
 import RPi.GPIO as GPIO
 
+try:
+    import yaml
+except ImportError:
+    yaml = None
+
 from button_state import ButtonEvent, ButtonState
 
 
@@ -456,6 +461,11 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         metavar='BlinkPattern',
         help='Run the given BlinkPattern immediately',
     )
+    parser.add_argument(
+        '--options',
+        metavar='FILE',
+        help='YAML file with options overrides',
+    )
     return parser.parse_args(argv)
 
 
@@ -463,6 +473,14 @@ def main(argv: Optional[list[str]] = None) -> None:
     pwm_hz = 100
 
     args = parse_args(argv)
+
+    if args.options:
+        if yaml is None:
+            raise ImportError('PyYAML is required when --options is used. Use: `pip install PyYAML`')
+
+        with open(args.options, encoding='utf-8') as f:
+            options.update(yaml.safe_load(f) or {})
+
     test_pattern: Optional[BlinkPattern] = args.test
     test_mode = test_pattern is not None
 

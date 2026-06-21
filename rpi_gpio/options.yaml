@@ -1,0 +1,62 @@
+# Example options file for rpi_status_gpio.py
+# Usage: sudo python3 rpi_status_gpio.py --options options.yaml
+# Only specified keys override built-in defaults.
+
+# Enable button monitoring and hold actions (false = LED only, no button GPIO)
+button: true
+# BCM GPIO pin number for the status LED (PWM output)
+led_pin: 18
+# BCM GPIO pin number for the shutdown/reboot button (input)
+button_pin: 4
+
+# Invert PWM duty cycle (true: 100% brightness -> duty 0, 0% -> duty 100)
+led_brightness_is_inverted: true
+# Invert button logic (false: active-low with pull-up; true: active-high with pull-down)
+button_is_inverted: false
+
+
+
+# Blink patterns (BlinkPattern names for blink_pattern_inet / blink_pattern_local / blink_pattern_none)
+#
+# Name format: {FLASH|BLACK}_{N}F_{M}S
+#   - FLASH_* : LED flashes at 100% brightness on the FLASH phase
+#   - BLACK_* : LED flashes at 0% brightness on the FLASH phase (dark pulses on dim base)
+#   - N       : number of flashes per cycle
+#   - M       : cycle length in seconds (e.g. 2S = 2 seconds)
+#
+# Each cycle has two phases:
+#   - BASE  : base brightness (dim), may include pauses between flashes
+#   - FLASH : short flash at full-on (FLASH_*) or full-off (BLACK_*)
+#
+# Allowed values:
+#   FLASH_1F_2S, FLASH_2F_2S, FLASH_3F_2S, FLASH_4F_3S, FLASH_5F_3S, FLASH_10F_1S
+#   BLACK_1F_2S, BLACK_2F_2S, BLACK_3F_2S, BLACK_4F_3S, BLACK_5F_3S, BLACK_10F_1S
+#
+# Test a pattern: sudo python3 rpi_status_gpio.py --test FLASH_3F_2S
+
+# Button events (ButtonEvent names for button_shutdown / button_reboot)
+#
+# PRESSED           — button was just pressed
+# RELEASED          — button was released (hold duration not in 2–4 s range)
+# RELEASED_HOLD_2S  — button released after holding 2–4 seconds
+# HOLD_5S           — button still pressed at 5 seconds
+
+# ButtonEvent that runs `sudo shutdown -h now` (RELEASED_HOLD_2S, HOLD_5S, or empty/none to disable)
+button_shutdown: HOLD_5S
+# ButtonEvent that runs `sudo reboot` (RELEASED_HOLD_2S, HOLD_5S, or empty/none to disable)
+button_reboot: ''
+
+# LED blink pattern when internet is available (BlinkPattern name, e.g. FLASH_1F_2S)
+blink_pattern_inet: FLASH_1F_2S
+# LED blink pattern when only local network is available
+blink_pattern_local: FLASH_3F_2S
+# LED blink pattern when there is no connection (also used for fail/unknown status)
+blink_pattern_none: FLASH_5F_3S
+
+
+
+# Seconds between internet checks when full internet access is available
+internet_check_interval_s: 600.0
+# Seconds between internet checks when internet is not available
+internet_check_no_inet_interval_s: 60.0
+
