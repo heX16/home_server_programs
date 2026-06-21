@@ -7,10 +7,11 @@ from threading import Lock, Event
 import RPi.GPIO as GPIO
 
 
-
 class BlinkPattern(Enum):
-    PATTERN_1 = auto()
-    SHUTDOWN = auto()
+    # Pattern names describe the flash rate (flashes per interval).
+    # Timing is interpreted as: BASE for (period - FLASH_PULSE_MS), then FLASH for FLASH_PULSE_MS.
+    FLASH_1F_2S = auto()
+    FLASH_10F_1S = auto()
 
 
 # Button hold time to start shutdown
@@ -64,55 +65,48 @@ def compute_pause_s_and_brightness(
     t_ms is expected to be milliseconds within a minute (0..59999). The function is
     intentionally pure: it does not touch GPIO and does not maintain any state.
     """
+    # LED pattern semantics:
+    # Each blink pattern is a 2-phase cycle:
+    # - BASE phase: keep base_brightness_pct for (period_ms - flash_pulse_ms)
+    # - FLASH phase: keep flash_brightness_pct for flash_pulse_ms
+    base_brightness_pct = 10.0
+    flash_brightness_pct = 100.0
+    flash_pulse_ms = 50
 
-    # Normal operation pattern:
-    # - Base brightness stays at 10%
-    # - A very short 100% flash happens once every 2 seconds
-    NORMAL_BASE_BRIGHTNESS = 10
-    NORMAL_FLASH_BRIGHTNESS = 100
-    NORMAL_FLASH_INTERVAL_S = 2.0
-    NORMAL_FLASH_DURATION_S = 0.06
-    # Shutdown pattern: blink 10 times per second
-    SHUTDOWN_BLINK_HZ = 10.0
+    flash_1f_2s_period_ms = 2000
+    flash_10f_1s_period_ms = 100
 
-    if blink_pattern == BlinkPattern.SHUTDOWN:
-        half_period_ms = int(1000.0 / (SHUTDOWN_BLINK_HZ * 2.0))
-        period_ms = half_period_ms * 2
-        phase_ms = t_ms % period_ms
+    period_by_pattern_ms = {
+        BlinkPattern.FLASH_1F_2S: flash_1f_2s_period_ms,
+        BlinkPattern.FLASH_10F_1S: flash_10f_1s_period_ms,
+    }
 
-        if phase_ms < half_period_ms:
-            remaining_ms = half_period_ms - phase_ms
-            return remaining_ms / 1000.0, NORMAL_FLASH_BRIGHTNESS
-
-        remaining_ms = period_ms - phase_ms
-        return remaining_ms / 1000.0, NORMAL_BASE_BRIGHTNESS
-
-    period_ms = int(NORMAL_FLASH_INTERVAL_S * 1000.0)
-    flash_ms = int(NORMAL_FLASH_DURATION_S * 1000.0)
+    period_ms = period_by_pattern_ms[blink_pattern]
+    flash_ms = flash_pulse_ms
     phase_ms = t_ms % period_ms
 
     if phase_ms < flash_ms:
         remaining_ms = flash_ms - phase_ms
-        return remaining_ms / 1000.0, NORMAL_FLASH_BRIGHTNESS
+        return remaining_ms / 1000.0, flash_brightness_pct
 
     remaining_ms = period_ms - phase_ms
-    return remaining_ms / 1000.0, NORMAL_BASE_BRIGHTNESS
+    return remaining_ms / 1000.0, base_brightness_pct
 
 
 def main() -> None:
-    PWM_HZ = 100
+    pwm_hz = 100
     # Debounce for the interrupt callback (milliseconds)
-    BUTTON_BOUNCETIME_MS = 50
+    button_bouncetime_ms = 50
 
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(options['led_pin'], GPIO.OUT)
     pull = GPIO.PUD_DOWN if options['button_is_inverted'] else GPIO.PUD_UP
     GPIO.setup(options['button_pin'], GPIO.IN, pull_up_down=pull)
 
-    pwm = GPIO.PWM(options['led_pin'], PWM_HZ)
+    pwm = GPIO.PWM(options['led_pin'], pwm_hz)
     pwm.start(brightness_percent_to_duty(0))
 
-    blink_pattern = BlinkPattern.PATTERN_1
+    blink_pattern = BlinkPattern.FLASH_1F_2S
 
     # Button hold tracking via interrupts
     lock = Lock()
@@ -138,7 +132,7 @@ def main() -> None:
         options['button_pin'],
         GPIO.BOTH,
         callback=button_callback,
-        bouncetime=BUTTON_BOUNCETIME_MS,
+        bouncetime=button_bouncetime_ms,
     )
 
     print('rpi_status_gpio started')
@@ -151,9 +145,9 @@ def main() -> None:
             with lock:
                 hold_started_at = pressed_started_at
 
-            if blink_pattern == BlinkPattern.PATTERN_1 and hold_started_at is not None:
+            if blink_pattern == BlinkPattern.FLASH_1F_2S and hold_started_at is not None:
                 if (now - hold_started_at) >= options['hold_to_shutdown_s']:
-                    blink_pattern = BlinkPattern.SHUTDOWN
+                    blink_pattern = BlinkPattern.FLASH_10F_1S
                     print('Shutdown requested (button held)')
                     run_shutdown_command()
 
