@@ -74,14 +74,15 @@ def compute_pause_s_and_brightness(
     """
     # LED pattern semantics:
     # Each blink pattern is a 2-phase cycle:
-    # - BASE phase: keep base_brightness_pct for (period_ms - flash_pulse_ms)
-    # - FLASH phase: keep flash_brightness_pct for flash_pulse_ms
+    # - BASE phase: keep base_brightness_pct for (period_ms - flash_2s_pulse_ms)
+    # - FLASH phase: keep flash_brightness_pct for flash_2s_pulse_ms
     base_brightness_pct = 10.0
     flash_brightness_pct = 100.0
-    flash_pulse_ms = 50
 
+    flash_2s_pulse_ms = 100
     flash_2s_period_ms = 2000
-    inter_flash_pause_ms = 100
+    inter_flash_pause_ms = 200
+    
     flash_10f_1s_period_ms = 100
 
     flashes_in_2s_by_pattern = {
@@ -99,13 +100,13 @@ def compute_pause_s_and_brightness(
 
         # One "slot" = one flash pulse + the pause that follows it.
         # The first N slots produce the flashes; the rest of the period is base.
-        slot_ms = flash_pulse_ms + inter_flash_pause_ms
+        slot_ms = flash_2s_pulse_ms + inter_flash_pause_ms
         flashes_block_ms = slot_ms * flash_count
 
         if phase_ms < flashes_block_ms:
             pos_in_slot = phase_ms % slot_ms
-            if pos_in_slot < flash_pulse_ms:
-                remaining_ms = flash_pulse_ms - pos_in_slot
+            if pos_in_slot < flash_2s_pulse_ms:
+                remaining_ms = flash_2s_pulse_ms - pos_in_slot
                 return remaining_ms / 1000.0, flash_brightness_pct
             remaining_ms = slot_ms - pos_in_slot
             return remaining_ms / 1000.0, base_brightness_pct
@@ -118,7 +119,7 @@ def compute_pause_s_and_brightness(
     }
 
     period_ms = period_by_pattern_ms[blink_pattern]
-    flash_ms = flash_pulse_ms
+    flash_ms = flash_2s_pulse_ms
     phase_ms = t_ms % period_ms
 
     if phase_ms < flash_ms:
