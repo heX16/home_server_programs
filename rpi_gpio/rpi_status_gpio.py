@@ -83,8 +83,6 @@ def compute_pause_s_and_brightness(
     flash_2s_pulse_ms = 100
     inter_flash_pause_ms = 300
 
-    flash_10f_1s_period_ms = 50
-
     flashes_in_2s_by_pattern = {
         BlinkPattern.FLASH_1F_2S: 1,
         BlinkPattern.FLASH_2F_2S: 2,
@@ -118,12 +116,8 @@ def compute_pause_s_and_brightness(
         remaining_ms = period_ms - phase_ms
         return remaining_ms / 1000.0, base_brightness_pct
 
-    period_by_pattern_ms = {
-        BlinkPattern.FLASH_10F_1S: flash_10f_1s_period_ms,
-    }
-
-    period_ms = period_by_pattern_ms[blink_pattern]
-    flash_ms = flash_2s_pulse_ms
+    period_ms = 100
+    flash_ms = 50
     phase_ms = t_ms % period_ms
 
     if phase_ms < flash_ms:
