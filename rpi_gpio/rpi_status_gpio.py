@@ -172,6 +172,14 @@ def check_internet_status(mode: str) -> str:
     return 'fail'
 
 
+def blink_pattern_for_internet_status(status: str) -> BlinkPattern:
+    if status == 'inet':
+        return BlinkPattern.FLASH_1F_2S
+    if status == 'local':
+        return BlinkPattern.FLASH_4F_3S
+    return BlinkPattern.FLASH_5F_3S
+
+
 def compute_pause_s_and_brightness(
     *,
     blink_pattern: BlinkPattern,
@@ -313,6 +321,7 @@ def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event) -> None:
             if not shutdown_process and now >= next_internet_check_at:
                 status = check_internet_status(internet_check_mode)
                 print(f'Internet check ({internet_check_mode}): {status}')
+                current_blink_pattern = blink_pattern_for_internet_status(status)
                 if status == 'inet':
                     check_interval_s = options['internet_check_interval_s']
                 else:
@@ -332,8 +341,9 @@ def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event) -> None:
 
             pause_s = _update_led_and_get_pause(pwm, current_blink_pattern, now)
 
-            if options['button'] and not shutdown_process and hold_started_at is not None:
-                pause_s = min(pause_s, 0.2)
+            if hold_started_at is not None:
+                # Poll frequently while the button is held so hold-to-shutdown is detected promptly.
+                pause_s = min(pause_s, 0.5)
 
             loop_event.wait(timeout=pause_s)
             loop_event.clear()
