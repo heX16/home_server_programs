@@ -9,7 +9,7 @@ class ButtonEvent(Enum):
     NO_EVENT = auto()
     PRESSED = auto()
     RELEASED = auto()
-    HOLD_2S = auto()
+    RELEASED_HOLD_2S = auto()
     HOLD_5S = auto()
 
     @classmethod
@@ -81,7 +81,7 @@ class ButtonState:
                     released_hold_s is not None
                     and hold_2s_lo <= released_hold_s <= hold_2s_hi
                 ):
-                    event = ButtonEvent.HOLD_2S
+                    event = ButtonEvent.RELEASED_HOLD_2S
                 else:
                     event = ButtonEvent.RELEASED
                 self.hold_emitted = False

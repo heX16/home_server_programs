@@ -52,7 +52,7 @@ class BlinkPattern(Enum):
 # - 'local': local network only
 # - 'none': no connection (also used for 'fail' and unknown statuses)
 # Button hold actions (ButtonEvent that triggers each action):
-# - 'HOLD_2S': release after 2-4s hold
+# - 'RELEASED_HOLD_2S': release after 2-4s hold
 # - 'HOLD_5S': still pressed at 5s
 # - 'none': disabled
 options = {

@@ -36,9 +36,9 @@ class TestButtonState(unittest.TestCase):
         events = simulate_press_release(0.5)
         self.assertEqual(events, [ButtonEvent.PRESSED, ButtonEvent.RELEASED])
 
-    def test_hold_3s_emits_pressed_then_hold_2s(self):
+    def test_hold_3s_emits_pressed_then_released_hold_2s(self):
         events = simulate_press_release(3.0)
-        self.assertEqual(events, [ButtonEvent.PRESSED, ButtonEvent.HOLD_2S])
+        self.assertEqual(events, [ButtonEvent.PRESSED, ButtonEvent.RELEASED_HOLD_2S])
 
     def test_hold_4_5s_emits_pressed_then_released(self):
         events = simulate_press_release(4.5)
@@ -58,13 +58,13 @@ class TestButtonState(unittest.TestCase):
             [ButtonEvent.PRESSED, ButtonEvent.HOLD_5S, ButtonEvent.RELEASED],
         )
 
-    def test_hold_2s_boundary_is_hold_2s(self):
+    def test_hold_2s_boundary_is_released_hold_2s(self):
         events = simulate_press_release(2.0)
-        self.assertEqual(events, [ButtonEvent.PRESSED, ButtonEvent.HOLD_2S])
+        self.assertEqual(events, [ButtonEvent.PRESSED, ButtonEvent.RELEASED_HOLD_2S])
 
-    def test_hold_4s_boundary_is_hold_2s(self):
+    def test_hold_4s_boundary_is_released_hold_2s(self):
         events = simulate_press_release(4.0)
-        self.assertEqual(events, [ButtonEvent.PRESSED, ButtonEvent.HOLD_2S])
+        self.assertEqual(events, [ButtonEvent.PRESSED, ButtonEvent.RELEASED_HOLD_2S])
 
 
 if __name__ == '__main__':
