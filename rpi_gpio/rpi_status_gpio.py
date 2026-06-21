@@ -16,8 +16,8 @@ class BlinkPattern(Enum):
     FLASH_1F_2S = auto()
     FLASH_2F_2S = auto()
     FLASH_3F_2S = auto()
-    FLASH_4F_2S = auto()
-    FLASH_5F_2S = auto()
+    FLASH_4F_3S = auto()
+    FLASH_5F_3S = auto()
     FLASH_10F_1S = auto()
 
 
@@ -80,8 +80,7 @@ def compute_pause_s_and_brightness(
     flash_brightness_pct = 100.0
 
     flash_2s_pulse_ms = 100
-    flash_2s_period_ms = 2000
-    inter_flash_pause_ms = 400
+    inter_flash_pause_ms = 300
 
     flash_10f_1s_period_ms = 100
 
@@ -89,12 +88,16 @@ def compute_pause_s_and_brightness(
         BlinkPattern.FLASH_1F_2S: 1,
         BlinkPattern.FLASH_2F_2S: 2,
         BlinkPattern.FLASH_3F_2S: 3,
-        BlinkPattern.FLASH_4F_2S: 4,
-        BlinkPattern.FLASH_5F_2S: 5,
+        BlinkPattern.FLASH_4F_3S: 4,
+        BlinkPattern.FLASH_5F_3S: 5,
     }
 
     if blink_pattern in flashes_in_2s_by_pattern:
-        period_ms = flash_2s_period_ms
+        if blink_pattern in [BlinkPattern.FLASH_4F_3S, BlinkPattern.FLASH_5F_3S]:
+            period_ms = 3000
+        else:
+            period_ms = 2000
+
         flash_count = flashes_in_2s_by_pattern[blink_pattern]
         phase_ms = t_ms % period_ms
 
