@@ -60,6 +60,10 @@ class ButtonState:
                 self.button_pressed = False
                 self.pressed_started_at = None
 
+    def is_button_pressed(self) -> bool:
+        with self.lock:
+            return self.button_pressed
+
     def analyze_event(self, now: float) -> ButtonEvent:
         """
         Analyze button press/release/hold and return one event for this loop iteration.
