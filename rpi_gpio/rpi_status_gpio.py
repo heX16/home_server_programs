@@ -34,6 +34,7 @@ class ButtonEvent(Enum):
     NONE = auto()
     PRESSED = auto()
     RELEASED = auto()
+    HOLD_2S = auto()
     HOLD_5S = auto()
 
 
@@ -46,6 +47,7 @@ class ButtonState:
     prev_button_pressed: bool = False
     hold_emitted: bool = False
     button_pressed_now: bool = False
+    last_released_hold_s: Optional[float] = None
 
     def update_from_gpio(self, pressed_now: bool, ts: float) -> None:
         with self.lock:
@@ -53,6 +55,8 @@ class ButtonState:
                 self.button_pressed = True
                 self.pressed_started_at = ts
             elif not pressed_now and self.button_pressed:
+                if self.pressed_started_at is not None:
+                    self.last_released_hold_s = ts - self.pressed_started_at
                 self.button_pressed = False
                 self.pressed_started_at = None
 
@@ -65,6 +69,8 @@ class ButtonState:
         if not self.enabled:
             return ButtonEvent.NONE
 
+        hold_2s_lo = 2.0
+        hold_2s_hi = 4.0
         hold_5s = 5.0
 
         with self.lock:
@@ -84,7 +90,15 @@ class ButtonState:
             elif button_pressed_now and not prev:
                 event = ButtonEvent.PRESSED
             elif not button_pressed_now and prev:
-                event = ButtonEvent.RELEASED
+                released_hold_s = self.last_released_hold_s
+                self.last_released_hold_s = None
+                if (
+                    released_hold_s is not None
+                    and hold_2s_lo <= released_hold_s <= hold_2s_hi
+                ):
+                    event = ButtonEvent.HOLD_2S
+                else:
+                    event = ButtonEvent.RELEASED
                 self.hold_emitted = False
 
             self.prev_button_pressed = button_pressed_now
@@ -384,6 +398,8 @@ def run_test_mode(
                 print('Button pressed')
             elif event == ButtonEvent.RELEASED:
                 print('Button released')
+            elif event == ButtonEvent.HOLD_2S:
+                print('Button held 2-4s')
 
         pause_s = _update_led_and_get_pause(pwm, test_pattern, time.monotonic())
         loop_event.wait(timeout=pause_s)
@@ -412,7 +428,9 @@ def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event, button_state: ButtonStat
 
         if options['button']:
             event = button_state.analyze_event(now)
-            if not shutdown_process and event == ButtonEvent.HOLD_5S:
+            if event == ButtonEvent.HOLD_2S:
+                print('Button held 2-4s')
+            elif not shutdown_process and event == ButtonEvent.HOLD_5S:
                 shutdown_process = True
                 current_blink_pattern = BlinkPattern.FLASH_10F_1S
                 print('Shutdown requested (button held)')
