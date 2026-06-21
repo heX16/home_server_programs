@@ -14,6 +14,9 @@ class BlinkPattern(Enum):
     # - FLASH phase: flash brightness
     FLASH_1F_2S = auto()
     FLASH_2F_2S = auto()
+    FLASH_3F_2S = auto()
+    FLASH_4F_2S = auto()
+    FLASH_5F_2S = auto()
     FLASH_10F_1S = auto()
 
 
@@ -80,32 +83,36 @@ def compute_pause_s_and_brightness(
     inter_flash_pause_ms = 100
     flash_10f_1s_period_ms = 100
 
-    if blink_pattern == BlinkPattern.FLASH_2F_2S:
+    flashes_in_2s_by_pattern = {
+        BlinkPattern.FLASH_1F_2S: 1,
+        BlinkPattern.FLASH_2F_2S: 2,
+        BlinkPattern.FLASH_3F_2S: 3,
+        BlinkPattern.FLASH_4F_2S: 4,
+        BlinkPattern.FLASH_5F_2S: 5,
+    }
+
+    if blink_pattern in flashes_in_2s_by_pattern:
         period_ms = flash_2s_period_ms
-        flash_ms = flash_pulse_ms
+        flash_count = flashes_in_2s_by_pattern[blink_pattern]
         phase_ms = t_ms % period_ms
 
-        flash1_end = flash_ms
-        gap_end = flash_ms + inter_flash_pause_ms
-        flash2_end = (2 * flash_ms) + inter_flash_pause_ms
+        # One "slot" = one flash pulse + the pause that follows it.
+        # The first N slots produce the flashes; the rest of the period is base.
+        slot_ms = flash_pulse_ms + inter_flash_pause_ms
+        flashes_block_ms = slot_ms * flash_count
 
-        if phase_ms < flash1_end:
-            remaining_ms = flash1_end - phase_ms
-            return remaining_ms / 1000.0, flash_brightness_pct
-
-        if phase_ms < gap_end:
-            remaining_ms = gap_end - phase_ms
+        if phase_ms < flashes_block_ms:
+            pos_in_slot = phase_ms % slot_ms
+            if pos_in_slot < flash_pulse_ms:
+                remaining_ms = flash_pulse_ms - pos_in_slot
+                return remaining_ms / 1000.0, flash_brightness_pct
+            remaining_ms = slot_ms - pos_in_slot
             return remaining_ms / 1000.0, base_brightness_pct
-
-        if phase_ms < flash2_end:
-            remaining_ms = flash2_end - phase_ms
-            return remaining_ms / 1000.0, flash_brightness_pct
 
         remaining_ms = period_ms - phase_ms
         return remaining_ms / 1000.0, base_brightness_pct
 
     period_by_pattern_ms = {
-        BlinkPattern.FLASH_1F_2S: flash_2s_period_ms,
         BlinkPattern.FLASH_10F_1S: flash_10f_1s_period_ms,
     }
 
