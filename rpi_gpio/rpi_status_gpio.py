@@ -451,6 +451,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         try:
             set_brightness(pwm, 0)
             pwm.stop()
+            del pwm
         finally:
             GPIO.cleanup()
         print('rpi_status_gpio stopped')
