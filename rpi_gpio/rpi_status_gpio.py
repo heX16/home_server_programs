@@ -1,5 +1,6 @@
 import subprocess
 import time
+from enum import Enum, auto
 from typing import Optional
 from threading import Lock, Event
 
@@ -18,6 +19,12 @@ NORMAL_FLASH_DURATION_S = 0.06
 
 # Shutdown pattern: blink 10 times per second
 SHUTDOWN_BLINK_HZ = 10.0
+
+
+class BlinkPattern(Enum):
+    PATTERN_1 = auto()
+    SHUTDOWN = auto()
+
 
 # Debounce for the interrupt callback (milliseconds)
 BUTTON_BOUNCETIME_MS = 50
@@ -64,12 +71,12 @@ def run_shutdown_command() -> None:
 
 def compute_pause_s(
     *,
-    shutdown_started: bool,
+    blink_pattern: BlinkPattern,
     flash_until_at: Optional[float],
     hold_started_at: Optional[float],
     shutdown_toggle_every_s: float,
 ) -> float:
-    if shutdown_started:
+    if blink_pattern == BlinkPattern.SHUTDOWN:
         pause_s = 0.02
         if shutdown_toggle_every_s < pause_s:
             pause_s = shutdown_toggle_every_s
@@ -84,6 +91,41 @@ def compute_pause_s(
     return 0.5
 
 
+def update_led_patterns(
+    *,
+    pwm: GPIO.PWM,
+    now: float,
+    blink_pattern: BlinkPattern,
+    next_normal_flash_at: float,
+    flash_until_at: Optional[float],
+    shutdown_next_toggle_at: Optional[float],
+    shutdown_blink_on: bool,
+    shutdown_toggle_every_s: float,
+) -> tuple[float, Optional[float], Optional[float], bool]:
+    if blink_pattern == BlinkPattern.SHUTDOWN:
+        if shutdown_next_toggle_at is None or now >= shutdown_next_toggle_at:
+            shutdown_blink_on = not shutdown_blink_on
+            shutdown_next_toggle_at = now + shutdown_toggle_every_s
+            set_brightness(
+                pwm,
+                NORMAL_FLASH_BRIGHTNESS if shutdown_blink_on else NORMAL_BASE_BRIGHTNESS,
+            )
+    elif blink_pattern == BlinkPattern.PATTERN_1:
+        if flash_until_at is not None and now >= flash_until_at:
+            flash_until_at = None
+            set_brightness(pwm, NORMAL_BASE_BRIGHTNESS)
+
+        if flash_until_at is None and now >= next_normal_flash_at:
+            flash_until_at = now + NORMAL_FLASH_DURATION_S
+            next_normal_flash_at = now + NORMAL_FLASH_INTERVAL_S
+            set_brightness(pwm, NORMAL_FLASH_BRIGHTNESS)
+
+        if flash_until_at is None:
+            set_brightness(pwm, NORMAL_BASE_BRIGHTNESS)
+
+    return next_normal_flash_at, flash_until_at, shutdown_next_toggle_at, shutdown_blink_on
+
+
 def main() -> None:
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(options['led_pin'], GPIO.OUT)
@@ -93,7 +135,7 @@ def main() -> None:
     pwm = GPIO.PWM(options['led_pin'], PWM_HZ)
     pwm.start(brightness_percent_to_duty(0))
 
-    shutdown_started = False
+    blink_pattern = BlinkPattern.PATTERN_1
 
     now = time.monotonic()
 
@@ -143,38 +185,29 @@ def main() -> None:
             with lock:
                 hold_started_at = pressed_started_at
 
-            if not shutdown_started and hold_started_at is not None:
+            if blink_pattern == BlinkPattern.PATTERN_1 and hold_started_at is not None:
                 if (now - hold_started_at) >= options['hold_to_shutdown_s']:
-                    shutdown_started = True
+                    blink_pattern = BlinkPattern.SHUTDOWN
                     shutdown_next_toggle_at = now
                     shutdown_blink_on = False
                     print('Shutdown requested (button held)')
                     run_shutdown_command()
 
-            # --- LED patterns ---
-            if shutdown_started:
-                if shutdown_next_toggle_at is None or now >= shutdown_next_toggle_at:
-                    shutdown_blink_on = not shutdown_blink_on
-                    shutdown_next_toggle_at = now + shutdown_toggle_every_s
-                    set_brightness(
-                        pwm,
-                        NORMAL_FLASH_BRIGHTNESS if shutdown_blink_on else NORMAL_BASE_BRIGHTNESS,
-                    )
-            else:
-                if flash_until_at is not None and now >= flash_until_at:
-                    flash_until_at = None
-                    set_brightness(pwm, NORMAL_BASE_BRIGHTNESS)
-
-                if flash_until_at is None and now >= next_normal_flash_at:
-                    flash_until_at = now + NORMAL_FLASH_DURATION_S
-                    next_normal_flash_at = now + NORMAL_FLASH_INTERVAL_S
-                    set_brightness(pwm, NORMAL_FLASH_BRIGHTNESS)
-
-                if flash_until_at is None:
-                    set_brightness(pwm, NORMAL_BASE_BRIGHTNESS)
+            next_normal_flash_at, flash_until_at, shutdown_next_toggle_at, shutdown_blink_on = (
+                update_led_patterns(
+                    pwm=pwm,
+                    now=now,
+                    blink_pattern=blink_pattern,
+                    next_normal_flash_at=next_normal_flash_at,
+                    flash_until_at=flash_until_at,
+                    shutdown_next_toggle_at=shutdown_next_toggle_at,
+                    shutdown_blink_on=shutdown_blink_on,
+                    shutdown_toggle_every_s=shutdown_toggle_every_s,
+                )
+            )
 
             pause_s = compute_pause_s(
-                shutdown_started=shutdown_started,
+                blink_pattern=blink_pattern,
                 flash_until_at=flash_until_at,
                 hold_started_at=hold_started_at,
                 shutdown_toggle_every_s=shutdown_toggle_every_s,
