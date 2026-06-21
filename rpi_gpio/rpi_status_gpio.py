@@ -81,8 +81,8 @@ def compute_pause_s_and_brightness(
 
     flash_2s_pulse_ms = 100
     flash_2s_period_ms = 2000
-    inter_flash_pause_ms = 200
-    
+    inter_flash_pause_ms = 400
+
     flash_10f_1s_period_ms = 100
 
     flashes_in_2s_by_pattern = {
@@ -132,7 +132,7 @@ def compute_pause_s_and_brightness(
 
 def parse_blink_pattern(value: str) -> BlinkPattern:
     try:
-        return BlinkPattern[value]
+        return BlinkPattern[value.upper()]
     except KeyError:
         allowed = ', '.join(p.name for p in BlinkPattern)
         raise argparse.ArgumentTypeError(
