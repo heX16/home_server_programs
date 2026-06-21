@@ -30,7 +30,7 @@ def simulate_press_release(hold_s: float) -> list[ButtonEvent]:
 class TestButtonState(unittest.TestCase):
     def test_disabled_returns_none(self):
         button_state = ButtonState(enabled=False)
-        self.assertEqual(button_state.analyze_event(0.0), ButtonEvent.NONE)
+        self.assertEqual(button_state.analyze_event(0.0), ButtonEvent.NO_EVENT)
 
     def test_tap_emits_pressed_then_released(self):
         events = simulate_press_release(0.5)

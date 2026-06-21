@@ -29,14 +29,24 @@ class BlinkPattern(Enum):
     BLACK_5F_3S = auto()
     BLACK_10F_1S = auto()
 
+    @classmethod
+    def from_name(cls, value: str) -> 'BlinkPattern':
+        return cls[value.upper()]
+
 
 class ButtonEvent(Enum):
     NOT_DEFINED = auto()
-    NONE = auto()
+    NO_EVENT = auto()
     PRESSED = auto()
     RELEASED = auto()
     HOLD_2S = auto()
     HOLD_5S = auto()
+
+    @classmethod
+    def from_name(cls, value: str) -> 'ButtonEvent':
+        if value.lower() in ('none', ''):
+            return cls.NOT_DEFINED
+        return cls[value.upper()]
 
 
 @dataclass
@@ -69,10 +79,10 @@ class ButtonState:
         """
         Analyze button press/release/hold and return one event for this loop iteration.
 
-        Returns ButtonEvent.NONE when enabled is False.
+        Returns ButtonEvent.NO_EVENT when enabled is False.
         """
         if not self.enabled:
-            return ButtonEvent.NONE
+            return ButtonEvent.NO_EVENT
 
         hold_2s_lo = 2.0
         hold_2s_hi = 4.0
@@ -82,7 +92,7 @@ class ButtonState:
             hold_started_at = self.pressed_started_at
             button_pressed_now = hold_started_at is not None
             prev = self.prev_button_pressed
-            event = ButtonEvent.NONE
+            event = ButtonEvent.NO_EVENT
 
             if (
                 button_pressed_now
@@ -109,16 +119,6 @@ class ButtonState:
             self.prev_button_pressed = button_pressed_now
             self.button_pressed_now = button_pressed_now
             return event
-
-
-def blink_pattern_from_name(value: str) -> BlinkPattern:
-    return BlinkPattern[value.upper()]
-
-
-def button_event_from_name(value: str) -> Optional[ButtonEvent]:
-    if value.lower() == 'none' or value.lower() == '':
-        return None
-    return ButtonEvent[value.upper()]
 
 
 # Button enabled:
@@ -279,10 +279,10 @@ def check_internet_status(mode: str) -> str:
 
 def blink_pattern_for_internet_status(status: str) -> BlinkPattern:
     if status == 'inet':
-        return blink_pattern_from_name(options['blink_pattern_inet'])
+        return BlinkPattern.from_name(options['blink_pattern_inet'])
     if status == 'local':
-        return blink_pattern_from_name(options['blink_pattern_local'])
-    return blink_pattern_from_name(options['blink_pattern_none'])
+        return BlinkPattern.from_name(options['blink_pattern_local'])
+    return BlinkPattern.from_name(options['blink_pattern_none'])
 
 
 def compute_pause_s_and_brightness(
@@ -429,9 +429,9 @@ def run_test_mode(
 
 def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event, button_state: ButtonState) -> None:
     button_action_triggered = False
-    shutdown_button_event = button_event_from_name(options['button_shutdown'])
-    reboot_button_event = button_event_from_name(options['button_reboot'])
-    current_blink_pattern = blink_pattern_from_name(options['blink_pattern_inet'])
+    shutdown_button_event = ButtonEvent.from_name(options['button_shutdown'])
+    reboot_button_event = ButtonEvent.from_name(options['button_reboot'])
+    current_blink_pattern = BlinkPattern.from_name(options['blink_pattern_inet'])
     next_internet_check_at = time.monotonic() + 1.0
 
     print('rpi_status_gpio started')
@@ -451,14 +451,14 @@ def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event, button_state: ButtonStat
 
         if options['button']:
             event = button_state.analyze_event(now)
-            
+
             if not button_action_triggered:
-                if shutdown_button_event is not None and event == shutdown_button_event:
+                if event == shutdown_button_event:
                     button_action_triggered = True
                     current_blink_pattern = BlinkPattern.FLASH_10F_1S
                     print('Shutdown requested')
                     run_shutdown_command()
-                elif reboot_button_event is not None and event == reboot_button_event:
+                elif event == reboot_button_event:
                     button_action_triggered = True
                     current_blink_pattern = BlinkPattern.FLASH_10F_1S
                     print('Reboot requested')
@@ -480,7 +480,7 @@ def run_main_mode(pwm: GPIO.PWM, shutdown_event: Event, button_state: ButtonStat
 
 def parse_blink_pattern(value: str) -> BlinkPattern:
     try:
-        return blink_pattern_from_name(value)
+        return BlinkPattern.from_name(value)
     except KeyError:
         allowed = ', '.join(p.name for p in BlinkPattern)
         raise argparse.ArgumentTypeError(
