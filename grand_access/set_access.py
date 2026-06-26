@@ -50,14 +50,14 @@ def ensure_owner(path: str, uid: int, gid: int) -> None:
     target_gid = stats.st_gid if gid == -1 else gid
     if stats.st_uid == target_uid and stats.st_gid == target_gid:
         return
-    os.chown(path, uid, gid, follow_symlinks=False)
+    os.chown(path, uid, gid)
 
 
 def ensure_mode(path: str, new_mode: int) -> None:
     current_mode = stat.S_IMODE(os.lstat(path).st_mode)
     if current_mode == new_mode:
         return
-    os.chmod(path, new_mode, follow_symlinks=False)
+    os.chmod(path, new_mode)
 
 
 def apply_add_group_write_one(path: str) -> None:
