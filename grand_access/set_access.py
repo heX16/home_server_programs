@@ -7,10 +7,11 @@ import os
 import pwd
 import stat
 import sys
+from pathlib import Path
 from typing import Callable, Iterator, Sequence
 
 
-SinglePathOp = Callable[[str], None]
+SinglePathOp = Callable[[Path], None]
 
 logger = logging.getLogger(__name__)
 
@@ -22,20 +23,16 @@ def setup_logging() -> None:
     )
 
 
-def directory_exists(path: str) -> bool:
-    if not os.path.isdir(path):
+def directory_exists(path: Path) -> bool:
+    if not path.is_dir():
         logger.warning('cannot access %s, skipping', path)
         return False
     return True
 
 
-def iter_paths(root: str) -> Iterator[str]:
+def iter_paths(root: Path) -> Iterator[Path]:
     yield root
-    for current_root, dirs, files in os.walk(root):
-        for dir_name in dirs:
-            yield os.path.join(current_root, dir_name)
-        for file_name in files:
-            yield os.path.join(current_root, file_name)
+    yield from root.rglob('*')
 
 
 def resolve_chown_ids(user: str, group: str) -> tuple[int, int]:
@@ -44,13 +41,13 @@ def resolve_chown_ids(user: str, group: str) -> tuple[int, int]:
     return uid, gid
 
 
-def ensure_owner(path: str, uid: int, gid: int) -> None:
+def ensure_owner(path: Path, uid: int, gid: int) -> None:
     try:
-        stats = os.lstat(path)
+        stats = path.lstat()
     except OSError as exc:
         logger.warning('cannot access %s, skipping: %s', path, exc)
         return
-    if stat.S_ISLNK(stats.st_mode):
+    if path.is_symlink():
         return
     target_uid = stats.st_uid if uid == -1 else uid
     target_gid = stats.st_gid if gid == -1 else gid
@@ -62,13 +59,13 @@ def ensure_owner(path: str, uid: int, gid: int) -> None:
         logger.warning('cannot change owner of %s, skipping: %s', path, exc)
 
 
-def ensure_mode(path: str, new_mode: int) -> None:
+def ensure_mode(path: Path, new_mode: int) -> None:
     try:
-        stats = os.lstat(path)
+        stats = path.lstat()
     except OSError as exc:
         logger.warning('cannot access %s, skipping: %s', path, exc)
         return
-    if stat.S_ISLNK(stats.st_mode):
+    if path.is_symlink():
         return
     current_mode = stat.S_IMODE(stats.st_mode)
     if current_mode == new_mode:
@@ -79,27 +76,26 @@ def ensure_mode(path: str, new_mode: int) -> None:
         logger.warning('cannot change mode of %s, skipping: %s', path, exc)
 
 
-def apply_add_group_write_one(path: str) -> None:
-    current_mode = stat.S_IMODE(os.lstat(path).st_mode)
+def apply_add_group_write_one(path: Path) -> None:
+    current_mode = stat.S_IMODE(path.lstat().st_mode)
     ensure_mode(path, current_mode | stat.S_IWGRP)
 
 
-def apply_execute_patterns_one(path: str, patterns: Sequence[str]) -> None:
-    if not os.path.isfile(path):
+def apply_execute_patterns_one(path: Path, patterns: Sequence[str]) -> None:
+    if not path.is_file():
         return
-    file_name = os.path.basename(path)
-    if not any(fnmatch.fnmatch(file_name, pattern) for pattern in patterns):
+    if not any(fnmatch.fnmatch(path.name, pattern) for pattern in patterns):
         return
-    current_mode = stat.S_IMODE(os.lstat(path).st_mode)
+    current_mode = stat.S_IMODE(path.lstat().st_mode)
     ensure_mode(path, current_mode | 0o555)
 
 
-def apply_group_rwX_others_none_one(path: str) -> None:
-    stats = os.lstat(path)
+def apply_group_rwX_others_none_one(path: Path) -> None:
+    stats = path.lstat()
     mode = stat.S_IMODE(stats.st_mode)
     updated = mode | stat.S_IRGRP | stat.S_IWGRP
     updated &= ~(stat.S_IROTH | stat.S_IWOTH | stat.S_IXOTH)
-    is_directory = stat.S_ISDIR(stats.st_mode)
+    is_directory = path.is_dir()
     has_any_execute = bool(mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH))
     if is_directory or has_any_execute:
         updated |= stat.S_IXGRP
@@ -108,26 +104,26 @@ def apply_group_rwX_others_none_one(path: str) -> None:
     ensure_mode(path, updated)
 
 
-def apply_setgid_directory_one(path: str) -> None:
-    if not os.path.isdir(path):
+def apply_setgid_directory_one(path: Path) -> None:
+    if not path.is_dir():
         return
-    current_mode = stat.S_IMODE(os.lstat(path).st_mode)
+    current_mode = stat.S_IMODE(path.lstat().st_mode)
     ensure_mode(path, current_mode | stat.S_ISGID)
 
 
-def apply_non_recursive(root: str, operations: Sequence[SinglePathOp]) -> None:
+def apply_non_recursive(root: Path, operations: Sequence[SinglePathOp]) -> None:
     for operation in operations:
         operation(root)
 
 
-def walk_tree(root: str, operations: Sequence[SinglePathOp]) -> None:
+def walk_tree(root: Path, operations: Sequence[SinglePathOp]) -> None:
     for path in iter_paths(root):
         for operation in operations:
             operation(path)
 
 
 def run_if_directory_exists(
-    path: str,
+    path: Path,
     root_only_operations: Sequence[SinglePathOp],
     tree_operations: Sequence[SinglePathOp],
 ) -> None:
@@ -139,7 +135,7 @@ def run_if_directory_exists(
 
 
 def configure_tree(
-    path: str,
+    path: Path,
     user: str,
     group: str,
     *,
@@ -150,7 +146,7 @@ def configure_tree(
 ) -> None:
     """Apply ownership and optional mode rules under path.
 
-    Empty user or group means do not change that attribute (os.chown -1).
+    Empty user or group means do not change that attribute (chown uid/gid -1).
     If both user and group are empty, the ownership step is skipped entirely.
 
     root_only_operations run once on path. tree_operations run on every node
@@ -185,7 +181,7 @@ def main() -> None:
     ensure_root_user()
     logger.info('Setting the access rights.')
     configure_tree(
-        '/opt/hspro',
+        Path('/opt/hspro'),
         'root',
         'share',
         add_group_write=True,
@@ -197,7 +193,7 @@ def main() -> None:
         ),
     )
     configure_tree(
-        '/srv/config',
+        Path('/srv/config'),
         'syncthing',
         'share',
         group_rwX_others_none=True,
