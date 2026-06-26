@@ -45,19 +45,38 @@ def resolve_chown_ids(user: str, group: str) -> tuple[int, int]:
 
 
 def ensure_owner(path: str, uid: int, gid: int) -> None:
-    stats = os.lstat(path)
+    try:
+        stats = os.lstat(path)
+    except OSError as exc:
+        logger.warning('cannot access %s, skipping: %s', path, exc)
+        return
+    if stat.S_ISLNK(stats.st_mode):
+        return
     target_uid = stats.st_uid if uid == -1 else uid
     target_gid = stats.st_gid if gid == -1 else gid
     if stats.st_uid == target_uid and stats.st_gid == target_gid:
         return
-    os.chown(path, uid, gid)
+    try:
+        os.chown(path, uid, gid)
+    except OSError as exc:
+        logger.warning('cannot change owner of %s, skipping: %s', path, exc)
 
 
 def ensure_mode(path: str, new_mode: int) -> None:
-    current_mode = stat.S_IMODE(os.lstat(path).st_mode)
+    try:
+        stats = os.lstat(path)
+    except OSError as exc:
+        logger.warning('cannot access %s, skipping: %s', path, exc)
+        return
+    if stat.S_ISLNK(stats.st_mode):
+        return
+    current_mode = stat.S_IMODE(stats.st_mode)
     if current_mode == new_mode:
         return
-    os.chmod(path, new_mode)
+    try:
+        os.chmod(path, new_mode)
+    except OSError as exc:
+        logger.warning('cannot change mode of %s, skipping: %s', path, exc)
 
 
 def apply_add_group_write_one(path: str) -> None:
