@@ -30,6 +30,9 @@ python gen_ha_config.py --csv="signals.csv" --out="out_ha"
 - **`lovelace/tab-*.yaml`**
   - Lovelace-дашборды (несколько файлов): для каждой уникальной непустой `Вкладка` генерируется отдельный YAML-файл
     с одним view «Комнаты» с карточками по комнатам (колонка `Группа`), внутри — только DO (`switch.*`).
+- **`lovelace/debug-generated.yaml`**
+  - Отдельный Lovelace-дашборд для отладки: два view — **DI** (`binary_sensor.*`) и **Sys DO** (`switch.*_sys`),
+    карточки сгруппированы по ящику (`Box<Я.>`), у каждой сущности иконка и цвет состояния (`state_color`).
 
 Важно: параметры подключения к MQTT брокеру (host/port/user/pass) в актуальном Home Assistant настраиваются через UI
 (Settings → Devices & services → MQTT). YAML тут используется только для ручных MQTT-сущностей.
@@ -62,9 +65,16 @@ lovelace:
       icon: mdi:home-map-marker
       show_in_sidebar: true
       filename: lovelace/tab-main.yaml
+    debug-generated:
+      mode: yaml
+      title: Debug (generated)
+      icon: mdi:bug
+      show_in_sidebar: true
+      filename: lovelace/debug-generated.yaml
 ```
 
-Файлы `lovelace/tab-*.yaml` должны лежать в конфиг-директории HA (обычно `/config/lovelace/tab-*.yaml`).
+Файлы `lovelace/tab-*.yaml` и `lovelace/debug-generated.yaml` должны лежать в конфиг-директории HA
+(обычно `/config/lovelace/`).
 После изменения `configuration.yaml` перезапустите Home Assistant.
 
 Пример структуры сгенерированного дашборда:
@@ -207,6 +217,18 @@ views:
 - **`group_reserved`**: сигнал пропускается (не попадает в дашборд).
 - **Сортировка** внутри комнаты: по `Я.`, затем по `N`, затем по `n`.
 
+### 5) Lovelace debug-дашборд (файл `lovelace/debug-generated.yaml`)
+
+Отдельный дашборд для отладки с двумя view:
+
+- **DI** (`path: debug-di`): все `Тип = DI` → `binary_sensor.<n>`, карточки по ящику (`Box<Я.>`).
+- **Sys DO** (`path: debug-sys-do`): только системные дубликаты `switch.<n>_sys`, карточки по `Box<Я.>`.
+
+Для каждой сущности в карточке задаётся иконка (`mdi:toggle-switch` для DI, `mdi:lightbulb` для Sys DO)
+и включён `state_color`, чтобы состояние on/off было видно по цвету.
+
+- **Сортировка** внутри карточки: по `Я.`, затем по `N`, затем по `n`.
+
 ## Системные дубликаты DO (`*_sys`)
 
 Для каждого `DO` создаётся дополнительный `switch`:
@@ -226,4 +248,5 @@ views:
 - `group = 'Box<Я.>'`
 - `system = True` (это внутреннее поле скрипта; в YAML напрямую не выводится)
 
-Системные дубликаты **не включаются** в Lovelace-дашборды `tab-*.yaml`.
+Системные дубликаты **не включаются** в Lovelace-дашборды `tab-*.yaml`, но **включаются** в debug-дашборд
+`lovelace/debug-generated.yaml` (view «Sys DO»).

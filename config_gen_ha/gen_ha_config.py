@@ -231,6 +231,82 @@ def dashboard_sort_key(item):
   return (box, ns_num, item.get('n', ''))
 
 
+def box_group_name(item):
+  """Map a signal to a debug card group name based on its box number."""
+  return 'Box' + str(item.get('box', '')).strip()
+
+
+def debug_entity_row(entity, icon):
+  """Build a Lovelace entity row with a fixed icon for state-colored display."""
+  return {
+    'entity': entity['sysname'],
+    'name': entity['name'],
+    'icon': icon,
+  }
+
+
+def build_lovelace_debug_entities_cards(signals_list, predicate, icon):
+  """
+  Build Lovelace entities cards grouped by box for the debug dashboard.
+
+  Each card lists matching signals sorted by box/signal number.
+  """
+  groups = {}
+  for item in signals_list:
+    if not predicate(item):
+      continue
+    group = box_group_name(item)
+    groups.setdefault(group, []).append(item)
+
+  cards = []
+  for group in sorted(groups.keys()):
+    entities = sorted(groups[group], key=dashboard_sort_key)
+    cards.append({
+      'type': 'entities',
+      'title': group,
+      'show_header_toggle': False,
+      'state_color': True,
+      'entities': [debug_entity_row(entity, icon) for entity in entities],
+    })
+  return cards
+
+
+def build_lovelace_debug_dashboard(signals_list):
+  """
+  Build Lovelace debug dashboard YAML: DI inputs and system DO duplicates.
+
+  DI view groups binary_sensor.* by box. Sys DO view groups switch.*_sys by box.
+  """
+  di_cards = build_lovelace_debug_entities_cards(
+    signals_list,
+    lambda item: item['type'] == 'DI',
+    'mdi:toggle-switch',
+  )
+  sys_do_cards = build_lovelace_debug_entities_cards(
+    signals_list,
+    lambda item: item['type'] == 'DO' and item.get('system', False),
+    'mdi:lightbulb',
+  )
+
+  return {
+    'title': 'Debug (generated)',
+    'views': [
+      {
+        'title': 'DI',
+        'path': 'debug-di',
+        'icon': 'mdi:electric-switch',
+        'cards': di_cards,
+      },
+      {
+        'title': 'Sys DO',
+        'path': 'debug-sys-do',
+        'icon': 'mdi:lightbulb',
+        'cards': sys_do_cards,
+      },
+    ],
+  }
+
+
 def build_lovelace_rooms_dashboard(signals_list):
   """
   Build Lovelace dashboard YAML: one view with entities cards per room.
@@ -362,6 +438,10 @@ def ha_gen_configs(signals_list, out_dir):
     out_name = f'tab-{tab_slug}.yaml'
     with io.open(out_dir / 'lovelace' / out_name, 'w', encoding='utf-8-sig') as outfile:
         yaml.dump(lovelace_dashboard, outfile, default_flow_style=False, allow_unicode=True)
+
+  debug_dashboard = build_lovelace_debug_dashboard(signals_list)
+  with io.open(out_dir / 'lovelace' / 'debug-generated.yaml', 'w', encoding='utf-8-sig') as outfile:
+      yaml.dump(debug_dashboard, outfile, default_flow_style=False, allow_unicode=True)
 
 
 def append_system_do_duplicates(signals_list):
