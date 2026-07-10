@@ -138,8 +138,16 @@ views:
 
 Из колонки MQTT (`MQTT name` или `Путь MQTT`) берётся базовый путь `mqtt`, и к нему добавляются суффиксы:
 
-- **Чтение состояния**: `state_topic = <mqtt>/r`
-- **Команда записи (только DO)**: `command_topic = <mqtt>/w`
+- **Чтение состояния**: `state_topic = <mqtt>/p` (retained-состояние от шлюза extbus)
+- **Команда записи (только DO)**: `command_topic = <mqtt>/w` (без retain)
+
+Схема топиков extbus:
+
+| Топик | Кто пишет | Retain |
+|---|---|---|
+| `/w` | HA (команды) | нет |
+| `/r` | extbus (live) | нет |
+| `/p` | extbus (состояние) | да |
 
 ## Связь колонок CSV с опциями Home Assistant (по генерируемым YAML)
 
@@ -155,7 +163,7 @@ views:
 - **`Наименование сигнала`**
   - используется как запасной `friendly_name`, если "Имя в интерфейсе" пустое
 - **`MQTT name` / `Путь MQTT`**
-  - влияет на: `state_topic` (добавляется `/r`)
+  - влияет на: `state_topic` (добавляется `/p`)
 - **`Тип`**
   - определяет: что строка станет `binary_sensor` (только `DI`)
 
@@ -172,7 +180,7 @@ views:
   - влияет на: `name` и на `entity_id` через `switch.<n>`
 - **`MQTT name` / `Путь MQTT`**
   - влияет на:
-    - `state_topic` (добавляется `/r`)
+    - `state_topic` (добавляется `/p`)
     - `command_topic` (добавляется `/w`)
 - **`Тип`**
   - определяет: что строка станет `switch` (только `DO`)
@@ -181,9 +189,11 @@ views:
 
 - `payload_on: '1'`
 - `payload_off: '0'`
-- `retain: true`
 - `unique_id` (стабильный идентификатор сущности)
-- `default_entity_id` (полный entity_id, например `binary_sensor.<n>`; требуется для HA Core 2026.4+, где `object_id` удалён)
+- `default_entity_id` (полный entity_id, например `switch.<n>`; требуется для HA Core 2026.4+, где `object_id` удалён)
+
+Команды на `/w` **не** публикуются с retain — retained-состояние обеспечивает шлюз extbus на `/p`.
+Без retained-сообщения на `state_topic` HA показывает состояние `unknown` и в UI отображает две кнопки вместо toggle.
 
 Важно: в MQTT YAML используется поле `name` (это friendly name в UI). `customize` можно оставить, но он уже не обязателен,
 если вас устраивают имена из `name`.

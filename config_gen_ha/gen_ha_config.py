@@ -163,7 +163,7 @@ def ha_gen_binary_sensor_node(item):
       'name': item['name'],
       'unique_id': f'di_{item["n"]}',
       'default_entity_id': item['sysname'],
-      'state_topic': item['mqtt'] + '/r',
+      'state_topic': item['mqtt'] + '/p',
       'payload_on': '1',
       'payload_off': '0',
     }
@@ -174,21 +174,19 @@ def ha_gen_switch_node(item):
   # Example:
   #- platform: mqtt
   #  name: 3
-  #  state_topic: "extbus/8/5/r"
+  #  state_topic: "extbus/8/5/p"
   #  command_topic: "extbus/8/5/w"
   #  payload_on:  "1"
   #  payload_off: "0"
-  #  retain: true
   return {
     'switch': {
       'name': item['name'],
       'unique_id': f'do_{item["n"]}',
       'default_entity_id': item['sysname'],
-      'state_topic': item['mqtt'] + '/r',
+      'state_topic': item['mqtt'] + '/p',
       'command_topic': item['mqtt'] + '/w',
       'payload_on': '1',
       'payload_off': '0',
-      'retain': True,
     }
   }
 
