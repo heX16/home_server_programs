@@ -86,7 +86,7 @@ def build_lovelace_rooms_dashboard_for_tab(signals_list, tab_value, tab_slug):
   filtered = list(filter(lambda x: norm_tab(x.get('tab', '')) == tab_value, signals_list))
   dashboard = build_lovelace_rooms_dashboard(filtered)
   dashboard = dict(dashboard)
-  dashboard['title'] = f'Rooms (generated) - {tab_value}'
+  dashboard['title'] = f'{tab_value}'
   if dashboard.get('views'):
     dashboard['views'] = [dict(dashboard['views'][0])]
     dashboard['views'][0]['path'] = f'rooms-{tab_slug}'
@@ -289,7 +289,7 @@ def build_lovelace_debug_dashboard(signals_list):
   )
 
   return {
-    'title': 'Debug (generated)',
+    'title': 'Debug',
     'views': [
       {
         'title': 'DI',
@@ -334,7 +334,7 @@ def build_lovelace_rooms_dashboard(signals_list):
     })
 
   return {
-    'title': 'Rooms (generated)',
+    'title': 'Rooms',
     'views': [
       {
         'title': 'Комнаты',
