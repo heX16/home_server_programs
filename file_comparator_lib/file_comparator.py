@@ -1,4 +1,4 @@
-version = 2.2
+version = 2.4
 # 2022.05.09
 
 import yaml # pip3 install pyyaml
@@ -111,6 +111,51 @@ def GetFileContent(fileName: Union[str, Path], encoding: str = 'utf-8'):
   except IOError:
     return ''
 
+
+def _normalize_ignore_path(path: Union[str, Path]) -> str:
+  """Normalize a path/key to POSIX relative form for ignore matching."""
+  k = str(path or '').strip().replace('\\', '/')
+  while k.startswith('./'):
+    k = k[2:]
+  while '//' in k:
+    k = k.replace('//', '/')
+  if k.endswith('/') and k != '/':
+    k = k.rstrip('/')
+  return k
+
+
+def relative_path_matches_ignore_entry(path: Union[str, Path], ignore_list) -> bool:
+  """
+  Return True if relative path matches any entry in ignore_list.
+  Match: exact (K == P) or under prefix (K.startswith(P + '/')).
+  Paths are compared in POSIX form; trailing '/' on ignore entries is optional.
+  """
+  if not ignore_list:
+    return False
+  k = _normalize_ignore_path(path)
+  if not k or k == '.':
+    return False
+  for raw in ignore_list:
+    p = _normalize_ignore_path(raw)
+    if not p:
+      continue
+    if k == p or k.startswith(p + '/'):
+      return True
+  return False
+
+
+def path_relative_to_dir(path: Union[str, Path], base_dir: Union[str, Path]) -> str:
+  """
+  Return POSIX path of path relative to base_dir.
+  Empty string if path is outside base_dir.
+  """
+  try:
+    rel = Path(path).resolve().relative_to(Path(base_dir).resolve()).as_posix()
+  except ValueError:
+    return ''
+  return _normalize_ignore_path(rel)
+
+
 class FileStoreComparator:
 
   def __init__(self, store_file: Union[str, Path], targetdir: Union[str, Path] = '.\\'):
@@ -125,8 +170,8 @@ class FileStoreComparator:
     self.on_filter = None
     self.recursion = True
     self.follow_symlinks = True
+    self.ignore_list = []  # relative POSIX paths to exclude from scan and store
     self._store_root = None
-
   def on_store_updated(self, change_type: str, key: str, values: dict) -> None:
     """
     Hook called right after the store is mutated.
@@ -184,12 +229,30 @@ class FileStoreComparator:
           return 0
     return 0
 
+  def files_ignore_filter(self, path: Path, isdir: bool) -> bool:
+    """
+    Return True if path is allowed by ignore_list (not ignored).
+    Used when purging store YAML and by event_filter.
+    """
+    return not relative_path_matches_ignore_entry(path, self.ignore_list)
+
   def event_filter(self, path: Path, isdir: bool) -> bool:
     # see also: https://pypi.org/project/igittigitt/
+    if not self.files_ignore_filter(path, isdir):
+      return False
     if callable(self.on_filter):
       return self.on_filter(path, isdir)
-    else:
-      return True
+    return True
+
+  def _purge_ignored_from_store(self, store: dict) -> None:
+    """Remove ignore_list keys from store without firing events."""
+    if not store:
+      return
+    for key in list(store.keys()):
+      path = self._key_to_path(key)
+      isdir = str(key).endswith('/')
+      if not self.files_ignore_filter(path, isdir):
+        store.pop(key, None)
 
   def get_fs_map(self, targetdir: Path) -> dict:
     """
@@ -373,6 +436,7 @@ class FileStoreComparator:
 
   def compare(self):
     store = self.load_store()
+    self._purge_ignored_from_store(store)
     self._store_root = store
     disk = self.get_fs_map(self.targetdir)
     self.compare_map(store, disk)
