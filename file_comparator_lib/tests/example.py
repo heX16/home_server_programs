@@ -17,9 +17,9 @@ from pathlib import Path
 
 class FileStoreComparator2(FileStoreComparator):
 
-  def __init__(self, store_file: str, targetdir = '.\\'):
+  def __init__(self, store_file, targetdir='.\\'):
     super().__init__(store_file, targetdir)
-    self.ignore_list = [] # NOTE: hides the file in every directory; should be fixed but not now.
+    self.store_rel_path = path_relative_to_dir(self.store_file, self.targetdir)
 
   def event_file_added(self, path: Path) -> None:
     print('Added:', path.as_posix())
@@ -34,10 +34,19 @@ class FileStoreComparator2(FileStoreComparator):
     print('Store error:', path.as_posix())
 
   def event_filter(self, path: Path, isdir: bool) -> bool:
-    if (isdir and '__pycache__' in path.parts) or (isdir and '.git' in path.parts) or (not isdir and path.name in self.ignore_list):
+    if (isdir and '__pycache__' in path.parts) or (isdir and '.git' in path.parts):
       return False
-    else:
-      return True
+    if self.store_rel_path and relative_path_matches_ignore_entry(path, [self.store_rel_path]):
+      return False
+    return super().event_filter(path, isdir)
+
+  def _purge_ignored_from_store(self, store: dict) -> None:
+    super()._purge_ignored_from_store(store)
+    if not store or not self.store_rel_path:
+      return
+    for key in list(store.keys()):
+      if relative_path_matches_ignore_entry(key, [self.store_rel_path]):
+        store.pop(key, None)
 
 def main():
   # Parameters
@@ -50,8 +59,6 @@ def main():
   store_file = Path(options['--store'])
   target_dir = options['--dir'] or '.'
   store_cmp = FileStoreComparator2(store_file, target_dir)
-  store_cmp.ignore_list = [store_file.name]
-
   store_cmp.compare()
 
 

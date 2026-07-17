@@ -13,6 +13,8 @@ files:    # файлы для отслеживания.
   'ПутьФайла': ИмяКоманды
 dirs:     # дириктории для отслеживания.
   'ПутьДириктории': ИмяКоманды
+ignore:   # необязательно: пути которые исключаются из store и сканирования.
+  - 'ПутьФайлаИлиДиректории'
 
 '''
 
@@ -29,7 +31,7 @@ Options:
   --skip-link   ignore changes in symlink files
 '''
 
-version = 2.5
+version = 2.7
 
 from docopt import docopt # pip3 install docopt
 from file_comparator import *
@@ -86,7 +88,7 @@ class FileStoreComparator2(FileStoreComparator):
   def __init__(self, store_file: str, targetdir: str = '.\\'):
     super().__init__(store_file, targetdir)
     self.config_path = '' # path to config for reload on change
-    self.ignore_list = [] # NOTE: скрывает указанный файл в каждой дире!!! - это поведение надобы пофиксить но нет времени...
+    self.store_rel_path = path_relative_to_dir(self.store_file, self.targetdir)
     self.run_commands = []
     self.skip_link = False
 
@@ -136,14 +138,21 @@ class FileStoreComparator2(FileStoreComparator):
 
     #todo: normalize path in: targetdir + "/" + "/".join(path). Example: targetdir='/etc', targetdir='etc', targetdir='/etc/'...
 
-    if (
-      (isdir and '__pycache__' in path.parts)
-      or (not isdir and path.name in self.ignore_list)
-      or (self.skip_link and (self.targetdir / path).is_symlink())
+    if (isdir and '__pycache__' in path.parts) or (
+      self.skip_link and (self.targetdir / path).is_symlink()
     ):
       return False
-    else:
-      return True
+    if self.store_rel_path and relative_path_matches_ignore_entry(path, [self.store_rel_path]):
+      return False
+    return super().event_filter(path, isdir)
+
+  def _purge_ignored_from_store(self, store: dict) -> None:
+    super()._purge_ignored_from_store(store)
+    if not store or not self.store_rel_path:
+      return
+    for key in list(store.keys()):
+      if relative_path_matches_ignore_entry(key, [self.store_rel_path]):
+        store.pop(key, None)
 
   def load_config(self, filename: str):
     # Read YAML file
@@ -156,6 +165,14 @@ class FileStoreComparator2(FileStoreComparator):
             log.warning('WARN: "dirs:" section is empty')
             self.config['dirs'] = {}
     self.run_commands = dict.fromkeys(self.config['commands'].keys(), False)
+
+    ignore = self.config.get('ignore')
+    if ignore is None:
+      ignore = []
+    if not isinstance(ignore, list):
+      log.warning('WARN: "ignore:" section must be a list')
+      ignore = []
+    self.ignore_list = [str(p) for p in ignore if p]
 
   def compare(self):
     super().compare()
@@ -204,7 +221,6 @@ def main():
   #options['--config'] = 'D:\\Sync\\House0-programs\\file_watcher\\watcher_config_test.yaml'
 
   store_cmp = FileStoreComparator2(options['--store'], options['--dir'])
-  store_cmp.ignore_list.append(Path(options['--store']).name)
   store_cmp.config_path = options['--config']
   store_cmp.skip_link = options['--skip-link']
   store_cmp.load_config(store_cmp.config_path)
