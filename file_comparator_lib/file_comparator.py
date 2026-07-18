@@ -173,6 +173,7 @@ class FileStoreComparator:
     self.ignore_list = []  # relative POSIX paths to exclude from scan and store
     self.sort_keys = True  # sort YAML mapping keys on save; False keeps dict insertion order (Python 3.7+)
     self._store_root = None
+
   def on_store_updated(self, change_type: str, key: str, values: dict) -> None:
     """
     Hook called right after the store is mutated.
@@ -424,8 +425,11 @@ class FileStoreComparator:
     return store_map
 
   def save_store(self, store):
+    to_dump = store or {}
+    if self.sort_keys:
+      to_dump = dict(sorted(to_dump.items()))
     data = yaml.dump(
-      store or {},
+      to_dump,
       default_flow_style=False,
       allow_unicode=True,
       sort_keys=self.sort_keys,
