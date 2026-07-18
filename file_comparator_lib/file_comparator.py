@@ -171,6 +171,7 @@ class FileStoreComparator:
     self.recursion = True
     self.follow_symlinks = True
     self.ignore_list = []  # relative POSIX paths to exclude from scan and store
+    self.sort_keys = True  # sort YAML mapping keys on save; False keeps dict insertion order (Python 3.7+)
     self._store_root = None
   def on_store_updated(self, change_type: str, key: str, values: dict) -> None:
     """
@@ -423,7 +424,12 @@ class FileStoreComparator:
     return store_map
 
   def save_store(self, store):
-    data = yaml.dump(store or {}, default_flow_style=False, allow_unicode=True)
+    data = yaml.dump(
+      store or {},
+      default_flow_style=False,
+      allow_unicode=True,
+      sort_keys=self.sort_keys,
+    )
     if GetFileContent(self.store_file, encoding=self.encoding) != data:
       with open(self.store_file, 'w', encoding=self.encoding) as f:
         f.write(data)
