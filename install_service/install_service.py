@@ -6,6 +6,8 @@ from pprint import pprint
 from subprocess import run, PIPE
 from pathlib import Path
 from typing import Union
+import shutil
+import os
 import logging
 import sys
 import file_comparator
@@ -55,6 +57,10 @@ In **ansible**, I would have to make a combination of the modules: `copy`,
 '''
 
 log = logging.getLogger('hspro.install_service')
+
+# Allow overriding systemd units directory for safe testing.
+# In production this defaults to '/etc/systemd/system'.
+SYSTEMD_DIR = Path(os.environ.get('INSTALL_SERVICE_SYSTEMD_DIR', '/etc/systemd/system'))
 
 def setup_logging(level_str: str) -> None:
     # journald is timestamping each entry; keep log lines compact and stderr-based.
@@ -289,6 +295,68 @@ def systemd_file_supports_start(file_type: str) -> bool:
     return file_type in start_supported
 
 
+def get_dropin_parent_unit(path: Path) -> Union[Path, None]:
+    """
+    Detect systemd drop-in override parent unit.
+
+    Example:
+      yggdrasil.service.d/override.conf  ->  yggdrasil.service
+      foo.timer.d/custom.conf            ->  foo.timer
+    """
+    parts = list(path.parts)
+    if not parts:
+        return None
+    for segment in parts:
+        if not segment.endswith('.d'):
+            continue
+        unit_name = segment[:-2]
+        if not unit_name:
+            continue
+        unit_path = Path(unit_name)
+        unit_type = systemd_file_type(unit_path)
+        if unit_type:
+            return unit_path
+    return None
+
+
+def systemd_target_path(rel_path: Path) -> Path:
+    """
+    Build destination path in systemd directory for a relative file path.
+    """
+    rel = Path(str(rel_path))
+    # Ensure we do not accidentally create absolute paths from rel_path.
+    while str(rel).startswith('./'):
+        rel = Path(str(rel)[2:])
+    return SYSTEMD_DIR / rel
+
+
+def copy_unit_file(source_root: Path, rel_path: Path) -> None:
+    """
+    Copy file from source_root/rel_path into SYSTEMD_DIR, preserving subdirectories.
+    """
+    src = source_root / rel_path
+    dst = systemd_target_path(rel_path)
+    try:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        log.warning('Copy file: %s -> %s', src, dst)
+        shutil.copy2(src, dst)
+    except Exception as e:
+        log.error('Error copying file %s to %s: %s', src, dst, e)
+
+
+def remove_unit_file(rel_path: Path) -> None:
+    """
+    Remove file in SYSTEMD_DIR for given relative path, if it exists.
+    """
+    dst = systemd_target_path(rel_path)
+    try:
+        if dst.is_file():
+            log.warning('Remove file: %s', dst)
+            dst.unlink()
+    except Exception as e:
+        log.error('Error removing file %s: %s', dst, e)
+
+
 class FileEventsSystemd:
     """
     Class handling file events for systemd service management.
@@ -301,12 +369,29 @@ class FileEventsSystemd:
 
     def file_added(self, path: Path) -> None:
         file_name = path
-        unit_type = systemd_file_type(file_name)
         log.warning('Added: %s', file_name)
 
+        # Skip pure directory events; files inside will be handled separately.
+        try:
+            if (self.dir / file_name).is_dir():
+                return
+        except Exception:
+            pass
+
+        dropin_parent = get_dropin_parent_unit(file_name)
+        if dropin_parent is not None:
+            # Drop-in override for existing unit.
+            parent_type = systemd_file_type(dropin_parent)
+            copy_unit_file(self.dir, file_name)
+            sh('sudo systemctl daemon-reload')
+            if parent_type and systemd_file_supports_start(parent_type):
+                sh('sudo systemctl restart {0}', dropin_parent.as_posix())
+            return
+
+        unit_type = systemd_file_type(file_name)
         timer_file = service_has_timer(file_name)
 
-        sh('cp {0} /etc/systemd/system/', str(self.dir / file_name))
+        copy_unit_file(self.dir, file_name)
 
         if timer_file == False:
             if systemd_file_supports_enable(unit_type):
@@ -321,11 +406,21 @@ class FileEventsSystemd:
         unit_type = systemd_file_type(file_name)
         log.warning('Removed: %s', file_name)
 
+        dropin_parent = get_dropin_parent_unit(file_name)
+        if dropin_parent is not None:
+            # Removing drop-in override.
+            parent_type = systemd_file_type(dropin_parent)
+            remove_unit_file(file_name)
+            sh('sudo systemctl daemon-reload')
+            if parent_type and systemd_file_supports_start(parent_type):
+                sh('sudo systemctl restart {0}', dropin_parent.as_posix())
+            return
+
         if systemd_file_supports_start(unit_type):
             sh('sudo systemctl stop {0}', file_name.as_posix())
         if systemd_file_supports_enable(unit_type):
             sh('sudo systemctl --quiet disable {0}', file_name.as_posix())
-        sh('rm /etc/systemd/system/{0}', file_name.as_posix())
+        remove_unit_file(file_name)
         sh('sudo systemctl daemon-reload')
         sh('sudo systemctl reset-failed')
 
@@ -334,11 +429,21 @@ class FileEventsSystemd:
         unit_type = systemd_file_type(file_name)
         log.warning('Changed: %s', file_name)
 
+        dropin_parent = get_dropin_parent_unit(file_name)
+        if dropin_parent is not None:
+            # Updated drop-in override.
+            parent_type = systemd_file_type(dropin_parent)
+            copy_unit_file(self.dir, file_name)
+            sh('sudo systemctl daemon-reload')
+            if parent_type and systemd_file_supports_start(parent_type):
+                sh('sudo systemctl restart {0}', dropin_parent.as_posix())
+            return
+
         timer_file = service_has_timer(file_name)
 
         if systemd_file_supports_start(unit_type):
             sh('sudo systemctl stop {0}', file_name.as_posix())
-        sh('cp {0} /etc/systemd/system/', str(self.dir / file_name))
+        copy_unit_file(self.dir, file_name)
         sh('sudo systemctl daemon-reload')
 
         if timer_file == False:
