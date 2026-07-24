@@ -18,6 +18,7 @@ import re
 import zlib
 import yaml
 from pathlib import Path
+from collections.abc import Iterator
 from docopt import docopt
 
 OUTPUT_SUBDIRS = ('mqtt', 'customize', 'lovelace')
@@ -350,42 +351,49 @@ def ensure_output_dirs(out_dir):
     (out_dir / subdir).mkdir(parents=True, exist_ok=True)
 
 
-def read_signals_list(csv_path):
-  # Read CSV file
+def iter_signals_rows(data_filename: Path) -> Iterator[list[str]]:
+  """
+  Yield table rows as lists of cell strings: header first, then data rows.
+
+  Currently supports only CSV (semicolon-delimited, UTF-8). Callers should not
+  depend on the file format; only on the row stream shape.
+  """
+  with open(data_filename, newline='', encoding='utf-8') as csvfile:
+    yield from csv.reader(csvfile, delimiter=';', quotechar='"')
+
+
+def read_signals_list(data_filename: Path):
   signals_list = []
+  rows_iter = iter_signals_rows(data_filename)
+  # First row is the header; remaining rows are signal data.
+  indices = parse_signals_csv_header(next(rows_iter))
 
-  with open(csv_path, newline='', encoding='utf-8') as csvfile:
-    datareader = csv.reader(csvfile, delimiter=';', quotechar='"')
-    # next() consumes the first row as the CSV header;
-    # the loop below starts from the second row
-    indices = parse_signals_csv_header(next(datareader))
+  for row in rows_iter:
+    for idx, cell in enumerate(row):
+      item = {
+        'n': row[indices['sig']].strip().replace('.', '_'), # глобальный уникальный индификатор
+        'ns': row[indices['ns']], # номер сигнала в ящике
+        'name': row[indices['name']].strip(),
+        'namesig': row[indices['namesig']].strip(),
+        'group': row[indices['group']].strip(),
+        'mqtt': row[indices['mqtt']].strip(),
+        #'logic': row[indices['logic']],
+        'type': row[indices['type']],
+        'module': row[indices['module']],
+        'box': row[indices['box']],
+        'b_m': str(row[indices['box']])+'_'+str(row[indices['module']]),
+        'system': False,
+        'tab': row[indices['tab']],
+      }
+      if item['name']=='':
+        item['name'] = item['namesig']
 
-    for row in datareader:
-      for idx, cell in enumerate(row):
-        item = {
-          'n': row[indices['sig']].strip().replace('.', '_'), # глобальный уникальный индификатор
-          'ns': row[indices['ns']], # номер сигнала в ящике
-          'name': row[indices['name']].strip(),
-          'namesig': row[indices['namesig']].strip(),
-          'group': row[indices['group']].strip(),
-          'mqtt': row[indices['mqtt']].strip(),
-          #'logic': row[indices['logic']],
-          'type': row[indices['type']],
-          'module': row[indices['module']],
-          'box': row[indices['box']],
-          'b_m': str(row[indices['box']])+'_'+str(row[indices['module']]),
-          'system': False,
-          'tab': row[indices['tab']],
-        }
-        if item['name']=='':
-          item['name'] = item['namesig']
-
-        if (idx == indices['type']) and (cell == 'DI'):
-          item['sysname'] = 'binary_sensor.'+item['n']
-          signals_list.append(item)
-        if (idx == indices['type']) and (cell == 'DO'):
-          item['sysname'] = 'switch.'+item['n']
-          signals_list.append(item)
+      if (idx == indices['type']) and (cell == 'DI'):
+        item['sysname'] = 'binary_sensor.'+item['n']
+        signals_list.append(item)
+      if (idx == indices['type']) and (cell == 'DO'):
+        item['sysname'] = 'switch.'+item['n']
+        signals_list.append(item)
 
   return signals_list
 
@@ -464,14 +472,14 @@ def append_system_do_duplicates(signals_list):
 
 def main():
   args = docopt(__doc__)
-  csv_path = Path(args['--csv']).resolve()
+  data_filename = Path(args['--csv']).resolve()
   out_dir = Path(args['--out']).resolve()
 
-  if not csv_path.is_file():
-    print(f'error: CSV file not found: {csv_path}', file=sys.stderr)
+  if not data_filename.is_file():
+    print(f'error: signals file not found: {data_filename}', file=sys.stderr)
     sys.exit(1)
 
-  signals_list = read_signals_list(csv_path)
+  signals_list = read_signals_list(data_filename)
   signals_list = append_system_do_duplicates(signals_list)
   ha_gen_configs(signals_list, out_dir)
   print(f'generate ok: {out_dir}')
