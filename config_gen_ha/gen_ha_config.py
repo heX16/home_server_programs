@@ -26,7 +26,7 @@ try:
 except ImportError:
   pd = None
 
-EXCEL_SUFFIXES = {'.xlsx', '.xls', '.ods'}
+TABLE_FORMAT_SUFFIXES = {'.xlsx', '.xls', '.ods'}
 
 OUTPUT_SUBDIRS = ('mqtt', 'customize', 'lovelace')
 
@@ -362,8 +362,8 @@ def iter_signals_rows(data_filename: Path) -> Iterator[list[str]]:
   """
   Yield table rows as lists of cell strings: header first, then data rows.
 
-  Supports semicolon-delimited UTF-8 CSV and spreadsheet files (.xlsx, .xls, .ods).
-  Spreadsheets use the first sheet. Callers should not depend on the file format;
+  Supports semicolon-delimited UTF-8 CSV and table formats (.xlsx, .xls, .ods).
+  Table formats use the first sheet. Callers should not depend on the file format;
   only on the row stream shape.
   """
   suffix = data_filename.suffix.lower()
@@ -372,7 +372,7 @@ def iter_signals_rows(data_filename: Path) -> Iterator[list[str]]:
       yield from csv.reader(csvfile, delimiter=';', quotechar='"')
     return
 
-  if suffix in EXCEL_SUFFIXES:
+  if suffix in TABLE_FORMAT_SUFFIXES:
     if pd is None:
       raise ImportError(
         f'Reading {suffix} requires pandas and engines '
