@@ -5,7 +5,8 @@
 
 Usage:
   mqtt_collect.py [-m HOST] [-p PORT] [--user=USER] [--password=PASS]
-                 [--topics=TOPICS] [--topics-file=FILE] [--timeout=SECONDS]
+                 [--topics=TOPICS] [--topics-file=FILE]
+                 [--connect-timeout=SECONDS] [--timeout=SECONDS]
   mqtt_collect.py (-h | --help)
 
 Options:
@@ -15,7 +16,8 @@ Options:
   --password=PASS                           MQTT password
   -t TOPICS, --topics=TOPICS                Comma-separated list of topics to read (exact topic names)
   --topics-file=FILE                        Path to a text file with topics (one topic per line)
-  --timeout=SECONDS                         Timeout in seconds to wait for all topics [default: 5]
+  --connect-timeout=SECONDS                 Timeout in seconds to connect to the broker [default: 5]
+  --timeout=SECONDS                         Timeout in seconds to wait for all topics [default: 10]
 
 Output:
   Prints collected values to stdout as:
@@ -25,7 +27,6 @@ Output:
 from __future__ import annotations
 
 import sys
-import time
 import threading
 from typing import Dict, List
 
@@ -82,6 +83,7 @@ def main() -> int:
         eprint('Error: --password requires --user')
         return 1
 
+    connect_timeout_s = float(args['--connect-timeout'])
     timeout_s = float(args['--timeout'])
 
     topics: List[str] = []
@@ -160,12 +162,7 @@ def main() -> int:
 
     client.loop_start()
 
-    deadline = time.monotonic() + timeout_s
-
-    def remaining() -> float:
-        return max(0.0, deadline - time.monotonic())
-
-    if not connected.wait(timeout=remaining()):
+    if not connected.wait(timeout=connect_timeout_s):
         eprint('Error: MQTT connect timeout')
         try:
             client.loop_stop()
@@ -181,7 +178,7 @@ def main() -> int:
             pass
         return 1
 
-    ok = done.wait(timeout=remaining())
+    ok = done.wait(timeout=timeout_s)
 
     for t in topics:
         if t in collected:
