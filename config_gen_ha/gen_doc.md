@@ -138,16 +138,21 @@ views:
 
 Из колонки MQTT (`MQTT name` или `Путь MQTT`) берётся базовый путь `mqtt`, и к нему добавляются суффиксы:
 
-- **Чтение состояния**: `state_topic = <mqtt>/p` (retained-состояние от шлюза extbus)
+- **Чтение состояния**: `state_topic = <mqtt>/r` (retained-состояние от шлюза extbus)
 - **Команда записи (только DO)**: `command_topic = <mqtt>/w` (без retain)
 
-Схема топиков extbus:
+### Регистры
 
-| Топик | Кто пишет | Retain |
-|---|---|---|
-| `/w` | HA (команды) | нет |
-| `/r` | extbus (live) | нет |
-| `/p` | extbus (состояние) | да |
+| Топик | Направление | Retain | Назначение |
+|-------|-------------|--------|------------|
+| `extbus/<addr>/<reg>/w` | MQTT → ExtBus | нет* | запись на устройство (`toDevice`) |
+| `extbus/<addr>/<reg>/p` | ExtBus → MQTT | нет | событие с устройства (`fromDevice`), без retain |
+| `extbus/<addr>/<reg>/r` | ExtBus → MQTT | да | событие с устройства (`fromDevice`), с **retain** |
+| `extbus/<addr>/<reg>/pfd` | MQTT → ExtBus | нет | **инжект** события от имени устройства (`fromDevice`) |
+
+\* Retain на `/w` и `/pfd` гейт считает ошибкой: пишет `WARNING` в лог, **удаляет retain** (публикует пустой payload с retain) и **не форвардит** такое сообщение в ExtBus (это обычно “старое состояние” от брокера после reconnect).
+
+Примеры: `extbus/1/2/w`, `extbus/1/2/p`, `extbus/1/2/r`, `extbus/1/2/pfd`.
 
 ## Связь колонок CSV с опциями Home Assistant (по генерируемым YAML)
 
@@ -163,7 +168,7 @@ views:
 - **`Наименование сигнала`**
   - используется как запасной `friendly_name`, если "Имя в интерфейсе" пустое
 - **`MQTT name` / `Путь MQTT`**
-  - влияет на: `state_topic` (добавляется `/p`)
+  - влияет на: `state_topic` (добавляется `/r`)
 - **`Тип`**
   - определяет: что строка станет `binary_sensor` (только `DI`)
 
@@ -180,7 +185,7 @@ views:
   - влияет на: `name` и на `entity_id` через `switch.<n>`
 - **`MQTT name` / `Путь MQTT`**
   - влияет на:
-    - `state_topic` (добавляется `/p`)
+    - `state_topic` (добавляется `/r`)
     - `command_topic` (добавляется `/w`)
 - **`Тип`**
   - определяет: что строка станет `switch` (только `DO`)
@@ -192,7 +197,7 @@ views:
 - `unique_id` (стабильный идентификатор сущности)
 - `default_entity_id` (полный entity_id, например `switch.<n>`; требуется для HA Core 2026.4+, где `object_id` удалён)
 
-Команды на `/w` **не** публикуются с retain — retained-состояние обеспечивает шлюз extbus на `/p`.
+Команды на `/w` **не** публикуются с retain — retained-состояние обеспечивает шлюз extbus на `/r`.
 Без retained-сообщения на `state_topic` HA показывает состояние `unknown` и в UI отображает две кнопки вместо toggle.
 
 Важно: в MQTT YAML используется поле `name` (это friendly name в UI). `customize` можно оставить, но он уже не обязателен,
