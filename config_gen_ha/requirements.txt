@@ -1,5 +1,6 @@
 docopt
 PyYAML
+# Optional: needed only for .xlsx / .xls / .ods. CSV works without these.
 pandas
 openpyxl
 xlrd

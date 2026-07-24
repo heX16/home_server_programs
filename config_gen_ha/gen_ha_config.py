@@ -17,10 +17,14 @@ import copy
 import re
 import zlib
 import yaml
-import pandas as pd
 from pathlib import Path
 from collections.abc import Iterator
 from docopt import docopt
+
+try:
+  import pandas as pd
+except ImportError:
+  pd = None
 
 EXCEL_SUFFIXES = {'.xlsx', '.xls', '.ods'}
 
@@ -369,6 +373,12 @@ def iter_signals_rows(data_filename: Path) -> Iterator[list[str]]:
     return
 
   if suffix in EXCEL_SUFFIXES:
+    if pd is None:
+      raise ImportError(
+        f'Reading {suffix} requires pandas and engines '
+        f'(openpyxl, xlrd, odfpy). Install them from requirements.txt. '
+        f'CSV works without pandas.'
+      )
     read_kwargs = {
       'sheet_name': 0,
       'dtype': str,
