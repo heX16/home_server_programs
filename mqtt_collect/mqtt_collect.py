@@ -81,7 +81,7 @@ def main() -> int:
     password = args.get('--password')
     if password and not user:
         eprint('Error: --password requires --user')
-        return 1
+        return 3
 
     connect_timeout_s = float(args['--connect-timeout'])
     timeout_s = float(args['--timeout'])
@@ -94,12 +94,12 @@ def main() -> int:
             topics += read_topics_file(args['--topics-file'])
         except Exception as ex:
             eprint(f'Error: cannot read --topics-file: {ex}')
-            return 1
+            return 3
 
     topics = dedupe_keep_order([t for t in topics if t])
     if not topics:
         eprint('Error: no topics provided. Use --topics=... and/or --topics-file=...')
-        return 1
+        return 3
 
     collected: Dict[str, str] = {}
     done = threading.Event()
@@ -146,7 +146,7 @@ def main() -> int:
         import paho.mqtt.client as mqtt
     except ImportError:
         eprint('Error: missing dependency "paho-mqtt". Install it with: pip install paho-mqtt')
-        return 1
+        return 3
 
     client = mqtt.Client()
     client.on_connect = on_connect
@@ -158,7 +158,7 @@ def main() -> int:
         client.connect(host, port, keepalive=60)
     except Exception as ex:
         eprint(f'Error: cannot connect to MQTT broker {host}:{port}: {ex}')
-        return 1
+        return 3
 
     client.loop_start()
 
@@ -168,7 +168,7 @@ def main() -> int:
             client.loop_stop()
         except Exception:
             pass
-        return 1
+        return 3
 
     if connect_failed.get('reason'):
         eprint(f'Error: {connect_failed.get("reason")}')
@@ -176,18 +176,13 @@ def main() -> int:
             client.loop_stop()
         except Exception:
             pass
-        return 1
+        return 3
 
-    ok = done.wait(timeout=timeout_s)
+    done.wait(timeout=timeout_s)
 
     for t in topics:
         if t in collected:
             print(f'{t}: {collected[t]}')
-
-    missing = [t for t in topics if t not in collected]
-    if missing:
-        for t in missing:
-            eprint(f'Missing: {t}')
 
     try:
         client.disconnect()
@@ -198,7 +193,12 @@ def main() -> int:
     except Exception:
         pass
 
-    return 0 if ok and not missing else 2
+    if len(collected) == len(topics):
+        return 0
+    if len(collected) == 0:
+        eprint('Error: no MQTT data collected')
+        return 2
+    return 1
 
 
 if __name__ == '__main__':
