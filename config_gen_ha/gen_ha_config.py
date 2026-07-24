@@ -1,11 +1,11 @@
-﻿"""Generate Home Assistant YAML config from a signals CSV file.
+﻿"""Generate Home Assistant YAML config from a signals table file.
 
 Usage:
   gen_ha_config.py --csv=<path> --out=<dir>
   gen_ha_config.py (-h | --help)
 
 Options:
-  --csv=<path>   Input CSV file path.
+  --csv=<path>   Input signals file: .csv, .xlsx, .xls, or .ods (first sheet).
   --out=<dir>    Output directory for generated Home Assistant YAML.
   -h, --help     Show this help message and exit.
 """
@@ -17,9 +17,12 @@ import copy
 import re
 import zlib
 import yaml
+import pandas as pd
 from pathlib import Path
 from collections.abc import Iterator
 from docopt import docopt
+
+EXCEL_SUFFIXES = {'.xlsx', '.xls', '.ods'}
 
 OUTPUT_SUBDIRS = ('mqtt', 'customize', 'lovelace')
 
@@ -355,11 +358,34 @@ def iter_signals_rows(data_filename: Path) -> Iterator[list[str]]:
   """
   Yield table rows as lists of cell strings: header first, then data rows.
 
-  Currently supports only CSV (semicolon-delimited, UTF-8). Callers should not
-  depend on the file format; only on the row stream shape.
+  Supports semicolon-delimited UTF-8 CSV and spreadsheet files (.xlsx, .xls, .ods).
+  Spreadsheets use the first sheet. Callers should not depend on the file format;
+  only on the row stream shape.
   """
-  with open(data_filename, newline='', encoding='utf-8') as csvfile:
-    yield from csv.reader(csvfile, delimiter=';', quotechar='"')
+  suffix = data_filename.suffix.lower()
+  if suffix == '.csv':
+    with open(data_filename, newline='', encoding='utf-8') as csvfile:
+      yield from csv.reader(csvfile, delimiter=';', quotechar='"')
+    return
+
+  if suffix in EXCEL_SUFFIXES:
+    read_kwargs = {
+      'sheet_name': 0,
+      'dtype': str,
+      'na_filter': False,
+    }
+    if suffix == '.ods':
+      read_kwargs['engine'] = 'odf'
+    df = pd.read_excel(data_filename, **read_kwargs)
+    yield [str(col) for col in df.columns]
+    for row in df.itertuples(index=False, name=None):
+      yield ['' if cell is None else str(cell) for cell in row]
+    return
+
+  raise ValueError(
+    f'Unsupported signals file type: {suffix!r}. '
+    f'Supported extensions: .csv, .xlsx, .xls, .ods'
+  )
 
 
 def read_signals_list(data_filename: Path):

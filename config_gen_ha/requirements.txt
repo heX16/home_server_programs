@@ -1,2 +1,6 @@
 docopt
 PyYAML
+pandas
+openpyxl
+xlrd
+odfpy
