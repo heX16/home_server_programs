@@ -1,3 +1,4 @@
 watchdog
 docopt
+paho-mqtt
 pyyaml
