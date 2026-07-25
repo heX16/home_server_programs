@@ -59,50 +59,216 @@ def route_src_via_socket(dst: str = ROUTE_PROBE_DST) -> Optional[str]:
     return ip
 
 
+def _addrs_from_ip_json(data: list) -> list[tuple[str, IfaceAddr]]:
+    '''Parse ip -j addr JSON into (iface_name, IfaceAddr) pairs.'''
+    out: list[tuple[str, IfaceAddr]] = []
+    for link in data:
+        name = str(link.get('ifname') or '')
+        if not name:
+            continue
+        for info in link.get('addr_info', []):
+            if info.get('family') != 'inet':
+                continue
+            local = info.get('local')
+            if not local or local.startswith('127.'):
+                continue
+            out.append(
+                (
+                    name,
+                    IfaceAddr(
+                        ip=local,
+                        dynamic=bool(info.get('dynamic', False)),
+                        secondary=bool(info.get('secondary', False)),
+                    ),
+                )
+            )
+    return out
+
+
+def _addrs_from_ip_text(text: str, iface_filter: Optional[str] = None) -> list[tuple[str, IfaceAddr]]:
+    '''Parse `ip -4 addr show` text into (iface_name, IfaceAddr) pairs.'''
+    out: list[tuple[str, IfaceAddr]] = []
+    current: Optional[str] = None
+    for line in text.splitlines():
+        if line and line[0].isdigit():
+            # e.g. "2: eth0: <BROADCAST,...>"
+            parts = line.split(':', 2)
+            if len(parts) >= 2:
+                current = parts[1].strip().split('@')[0]
+            continue
+        if iface_filter is not None and current != iface_filter:
+            continue
+        stripped = line.strip()
+        if not stripped.startswith('inet '):
+            continue
+        if current is None:
+            continue
+        parts = stripped.split()
+        ip = parts[1].split('/')[0]
+        if ip.startswith('127.'):
+            continue
+        out.append(
+            (
+                current,
+                IfaceAddr(
+                    ip=ip,
+                    dynamic='dynamic' in parts,
+                    secondary='secondary' in parts,
+                ),
+            )
+        )
+    return out
+
+
 def list_iface_ipv4(iface: str) -> list[IfaceAddr]:
     # Prefer JSON (iproute2); fall back to text parse.
     out = _run_ip('-4', '-j', 'addr', 'show', 'dev', iface)
-    addrs: list[IfaceAddr] = []
     if out:
         try:
             import json
 
-            data = json.loads(out)
-            for link in data:
-                for info in link.get('addr_info', []):
-                    if info.get('family') != 'inet':
-                        continue
-                    local = info.get('local')
-                    if not local or local.startswith('127.'):
-                        continue
-                    addrs.append(
-                        IfaceAddr(
-                            ip=local,
-                            dynamic=bool(info.get('dynamic', False)),
-                            secondary=bool(info.get('secondary', False)),
-                        )
-                    )
-            return addrs
+            return [addr for _, addr in _addrs_from_ip_json(json.loads(out))]
         except (ValueError, TypeError, KeyError):
             pass
 
     text = _run_ip('-4', 'addr', 'show', 'dev', iface)
-    for line in text.splitlines():
-        line = line.strip()
-        if not line.startswith('inet '):
+    return [addr for _, addr in _addrs_from_ip_text(text, iface_filter=iface)]
+
+
+def list_all_iface_ipv4() -> list[tuple[str, IfaceAddr]]:
+    '''Return (iface_name, addr) for all non-loopback IPv4 addresses.'''
+    out = _run_ip('-4', '-j', 'addr', 'show')
+    if out:
+        try:
+            import json
+
+            return _addrs_from_ip_json(json.loads(out))
+        except (ValueError, TypeError, KeyError):
+            pass
+
+    text = _run_ip('-4', 'addr', 'show')
+    if text:
+        return _addrs_from_ip_text(text)
+    return []
+
+
+def iproute2_available() -> bool:
+    return bool(_run_ip('-4', 'addr', 'show'))
+
+
+def _is_usable_ipv4(ip: str) -> bool:
+    if not ip or ip.startswith('127.'):
+        return False
+    # Link-local / APIPA — usually not useful for UPnP internal client.
+    if ip.startswith('169.254.'):
+        return False
+    return True
+
+
+def _dedupe_keep_order(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in items:
+        if item in seen:
             continue
-        parts = line.split()
-        ip = parts[1].split('/')[0]
-        if ip.startswith('127.'):
-            continue
-        addrs.append(
-            IfaceAddr(
-                ip=ip,
-                dynamic='dynamic' in parts,
-                secondary='secondary' in parts,
-            )
+        seen.add(item)
+        out.append(item)
+    return out
+
+
+def _list_ipv4_via_powershell() -> list[str]:
+    '''Windows: Get-NetIPAddress (locale-independent).'''
+    try:
+        out = subprocess.check_output(
+            [
+                'powershell',
+                '-NoProfile',
+                '-Command',
+                'Get-NetIPAddress -AddressFamily IPv4 '
+                '| Select-Object -ExpandProperty IPAddress',
+            ],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=15,
         )
-    return addrs
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return []
+    ips: list[str] = []
+    for line in out.splitlines():
+        ip = line.strip()
+        if _is_usable_ipv4(ip):
+            ips.append(ip)
+    return ips
+
+
+def _list_ipv4_via_socket() -> list[str]:
+    '''Cross-platform hostname / getaddrinfo fallback.'''
+    ips: list[str] = []
+    try:
+        hostname = socket.gethostname()
+    except OSError:
+        hostname = ''
+    if hostname:
+        try:
+            _, _, addrs = socket.gethostbyname_ex(hostname)
+            for ip in addrs:
+                if _is_usable_ipv4(ip):
+                    ips.append(ip)
+        except OSError:
+            pass
+        try:
+            for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
+                ip = info[4][0]
+                if _is_usable_ipv4(ip):
+                    ips.append(ip)
+        except OSError:
+            pass
+    probed = route_src_via_socket()
+    if probed and _is_usable_ipv4(probed):
+        ips.append(probed)
+    return ips
+
+
+def list_local_ipv4() -> list[str]:
+    '''Local non-loopback IPv4 addresses (Linux iproute2 or Windows fallbacks).'''
+    entries = list_all_iface_ipv4()
+    if entries:
+        return _dedupe_keep_order(
+            [addr.ip for _, addr in entries if _is_usable_ipv4(addr.ip)]
+        )
+
+    ips = _list_ipv4_via_powershell()
+    if not ips:
+        ips = _list_ipv4_via_socket()
+    return _dedupe_keep_order(ips)
+
+
+def candidates_from_iface(iface: str) -> list[str]:
+    '''IPv4 candidates on iface: DHCP first, then static (no route probe).'''
+    iface_addrs = list_iface_ipv4(iface)
+    if not iface_addrs:
+        logger.warning('No IPv4 addresses on iface %s', iface)
+        return []
+    logger.info(
+        'Iface %s addresses: %s',
+        iface,
+        ', '.join(
+            f"{a.ip}({'dhcp' if a.dynamic else 'static'}"
+            f"{',secondary' if a.secondary else ''})"
+            for a in iface_addrs
+        ),
+    )
+    if len(iface_addrs) == 1:
+        return [iface_addrs[0].ip]
+    dhcp = [a.ip for a in iface_addrs if a.dynamic]
+    static = [a.ip for a in iface_addrs if not a.dynamic]
+    candidates = dhcp + static
+    logger.info(
+        'Multiple IPv4 on %s — trying DHCP first, then others: %s',
+        iface,
+        ', '.join(candidates),
+    )
+    return candidates
 
 
 def build_internal_ip_candidates(explicit_ip: str) -> list[str]:
