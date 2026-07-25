@@ -99,7 +99,7 @@ def parse_ports_csv(raw: str) -> list[int]:
 
 
 def parse_protocols(raw: str) -> list[str]:
-    hint = 'expected one of: TCP, UDP, BOTH, TCP,UDP, UDP,TCP'
+    hint = 'expected one of: TCP, UDP, BOTH, TCP,UDP'
     text = str(raw).strip().upper()
     if text == 'TCP':
         return ['TCP']
@@ -164,6 +164,7 @@ def ensure_port(
     force: bool = False,
 ) -> bool:
     '''Return True on success for this port.'''
+    
     target = f'{protocol}/{port}'
     try:
         existing = find_mapping(backend, port, protocol)
