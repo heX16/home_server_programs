@@ -2,3 +2,4 @@ watchdog
 docopt
 paho-mqtt
 pyyaml
+miniupnpc
