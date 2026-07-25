@@ -42,7 +42,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from typing import Optional
+from typing import Callable, Optional
 
 from docopt import docopt
 
@@ -84,6 +84,8 @@ def cli_error(message: str) -> None:
     sys.exit(1)
 
 
+# --- CLI parsing helpers ---
+
 def parse_ports_csv(raw: str) -> list[int]:
     ports: list[int] = []
     for part in str(raw).split(','):
@@ -94,7 +96,7 @@ def parse_ports_csv(raw: str) -> list[int]:
             port = int(part)
         except ValueError:
             cli_error(f"Invalid port '{part}'.")
-        if port < 1 or port > 65535:
+        if not 1 <= port <= 65535:
             cli_error(f'Port {port} out of range (1-65535).')
         ports.append(port)
     if not ports:
@@ -103,9 +105,8 @@ def parse_ports_csv(raw: str) -> list[int]:
 
 
 def parse_protocols(raw: str) -> list[str]:
+    hint = 'expected TCP, UDP, BOTH, or TCP,UDP'
     text = str(raw).strip().upper()
-    if not text:
-        cli_error('Empty --proto= (expected TCP, UDP, BOTH, or TCP,UDP).')
     if text == 'BOTH':
         return ['TCP', 'UDP']
     protocols: list[str] = []
@@ -114,44 +115,53 @@ def parse_protocols(raw: str) -> list[str]:
         if not part:
             continue
         if part not in ('TCP', 'UDP'):
-            cli_error(
-                f"Invalid protocol '{part}' "
-                '(expected TCP, UDP, BOTH, or TCP,UDP).'
-            )
+            cli_error(f"Invalid protocol '{part}' ({hint}).")
         if part not in protocols:
             protocols.append(part)
     if not protocols:
-        cli_error('Empty --proto= (expected TCP, UDP, BOTH, or TCP,UDP).')
+        cli_error(f'Empty --proto= ({hint}).')
     return protocols
 
 
-def resolve_candidates(
-    iface: Optional[str],
-    ip: Optional[str],
-) -> list[str]:
+def parse_lease(raw: Optional[str]) -> int:
+    if not raw:
+        return LEASE_SECONDS
+    try:
+        lease = int(raw)
+    except ValueError:
+        cli_error(f"Invalid --lease '{raw}'.")
+    if lease < 0:
+        cli_error('--lease must be >= 0.')
+    return lease
+
+
+def resolve_candidates(iface: Optional[str], ip: Optional[str]) -> list[str]:
     '''CLI --ip / --iface beat env INTERNAL_IP; else auto-detect.'''
     if ip:
-        logger.info('Using explicit --ip=%s', ip)
+        logger.info(f'Using explicit --ip={ip}')
         return [ip]
     if iface:
-        logger.info('Using --iface=%s', iface)
+        logger.info(f'Using --iface={iface}')
         return candidates_from_iface(iface)
     return build_internal_ip_candidates(INTERNAL_IP.strip())
 
 
+# --- UPnP operations ---
+
 def create_backend() -> MiniupnpcBackend:
     backend = MiniupnpcBackend()
     igd = backend.discover()
-    logger.info('Using miniupnpc; IGD=%s', igd)
+    logger.info(f'Using miniupnpc; IGD={igd}')
     return backend
 
 
-def find_mapping(
-    mappings: list[PortMapping],
-    port: int,
-    protocol: str,
-) -> Optional[PortMapping]:
-    for m in mappings:
+def describe(m: PortMapping) -> str:
+    return f'{m.internal_ip}:{m.internal_port} desc={m.description!r}'
+
+
+def find_mapping(backend: UpnpBackend, port: int, protocol: str) -> Optional[PortMapping]:
+    '''Return the current mapping for port/protocol, or None. Raises UpnpError.'''
+    for m in backend.list_mappings():
         if m.external_port == port and m.protocol == protocol:
             return m
     return None
@@ -167,111 +177,57 @@ def ensure_port(
     force: bool = False,
 ) -> bool:
     '''Return True on success for this port.'''
+    target = f'{protocol}/{port}'
     try:
-        mappings = backend.list_mappings()
+        existing = find_mapping(backend, port, protocol)
     except UpnpError as exc:
-        logger.error(
-            'Failed to list mappings before %s/%s: %s',
-            protocol,
-            port,
-            exc,
-        )
+        logger.error(f'Failed to list mappings before {target}: {exc}')
         return False
 
     try_ips = list(ip_candidates)
-    existing = find_mapping(mappings, port, protocol)
     if existing is not None:
         if existing.description == description:
             # Owned by this script — refresh lease; keep working IP first if known.
             if existing.internal_ip in try_ips:
-                try_ips = [existing.internal_ip] + [
-                    ip for ip in try_ips if ip != existing.internal_ip
-                ]
+                try_ips.remove(existing.internal_ip)
+                try_ips.insert(0, existing.internal_ip)
             logger.info(
-                '%s/%s owned mapping %s:%s desc=%r — refreshing (try IPs: %s)',
-                protocol,
-                port,
-                existing.internal_ip,
-                existing.internal_port,
-                existing.description,
-                ', '.join(try_ips),
-            )
-            backend.delete_mapping(
-                port,
-                protocol,
-                remote_host=existing.remote_host,
+                f'{target} owned mapping {describe(existing)} — '
+                f"refreshing (try IPs: {', '.join(try_ips)})"
             )
         elif force:
             logger.warning(
-                '%s/%s foreign mapping %s:%s desc=%r — overwriting (--force)',
-                protocol,
-                port,
-                existing.internal_ip,
-                existing.internal_port,
-                existing.description,
-            )
-            backend.delete_mapping(
-                port,
-                protocol,
-                remote_host=existing.remote_host,
+                f'{target} foreign mapping {describe(existing)} — overwriting (--force)'
             )
         elif existing.internal_ip in ip_candidates:
             logger.warning(
-                '%s/%s occupied by foreign desc=%r on our IP %s — not overwriting',
-                protocol,
-                port,
-                existing.description,
-                existing.internal_ip,
+                f'{target} occupied by foreign desc={existing.description!r} '
+                f'on our IP {existing.internal_ip} — not overwriting'
             )
             return False
         else:
             logger.warning(
-                '%s/%s occupied by other host %s:%s desc=%r — not deleting',
-                protocol,
-                port,
-                existing.internal_ip,
-                existing.internal_port,
-                existing.description,
+                f'{target} occupied by other host {describe(existing)} — not deleting'
             )
             return False
+        backend.delete_mapping(port, protocol, remote_host=existing.remote_host)
 
-    last_err: Optional[UpnpError] = None
-    for ip in try_ips:
+    for i, ip in enumerate(try_ips):
         try:
             backend.add_mapping(ip, port, protocol, description, lease_seconds)
             logger.info(
-                '%s/%s mapped to %s (lease=%ss, desc=%r)',
-                protocol,
-                port,
-                ip,
-                lease_seconds,
-                description,
+                f'{target} mapped to {ip} (lease={lease_seconds}s, desc={description!r})'
             )
             return True
         except UpnpError as exc:
-            last_err = exc
             code_s = f' code={exc.code}' if exc.code is not None else ''
-            logger.error(
-                'Failed to map %s/%s via %s:%s — %s',
-                protocol,
-                port,
-                ip,
-                code_s,
-                exc,
-            )
-            if exc.code in IGD_RETRY_CODES and ip != try_ips[-1]:
-                logger.warning(
-                    'IGD code %s for %s — trying next internal IP',
-                    exc.code,
-                    ip,
-                )
-                continue
-            # Non-retryable or last candidate
+            logger.error(f'Failed to map {target} via {ip}:{code_s} — {exc}')
             if exc.code not in IGD_RETRY_CODES:
                 break
+            if i + 1 < len(try_ips):
+                logger.warning(f'IGD code {exc.code} for {ip} — trying next internal IP')
 
-    if last_err is not None:
-        logger.error('Port %s/%s failed after trying IPs: %s', protocol, port, try_ips)
+    logger.error(f'Port {target} failed after trying IPs: {try_ips}')
     return False
 
 
@@ -283,113 +239,37 @@ def remove_port(
     force: bool = False,
 ) -> bool:
     '''Return True on success (including missing mapping).'''
+    target = f'{protocol}/{port}'
     try:
-        mappings = backend.list_mappings()
+        existing = find_mapping(backend, port, protocol)
     except UpnpError as exc:
-        logger.error(
-            'Failed to list mappings before remove %s/%s: %s',
-            protocol,
-            port,
-            exc,
-        )
+        logger.error(f'Failed to list mappings before remove {target}: {exc}')
         return False
 
-    existing = find_mapping(mappings, port, protocol)
     if existing is None:
-        logger.info('%s/%s — no mapping to remove', protocol, port)
+        logger.info(f'{target} — no mapping to remove')
         return True
 
     if existing.description == description:
-        logger.info(
-            '%s/%s owned mapping %s:%s desc=%r — deleting',
-            protocol,
-            port,
-            existing.internal_ip,
-            existing.internal_port,
-            existing.description,
-        )
+        logger.info(f'{target} owned mapping {describe(existing)} — deleting')
     elif force:
-        logger.warning(
-            '%s/%s foreign mapping %s:%s desc=%r — deleting (--force)',
-            protocol,
-            port,
-            existing.internal_ip,
-            existing.internal_port,
-            existing.description,
-        )
+        logger.warning(f'{target} foreign mapping {describe(existing)} — deleting (--force)')
     else:
         logger.warning(
-            '%s/%s foreign mapping %s:%s desc=%r — not deleting (use --force)',
-            protocol,
-            port,
-            existing.internal_ip,
-            existing.internal_port,
-            existing.description,
+            f'{target} foreign mapping {describe(existing)} — not deleting (use --force)'
         )
         return False
 
     try:
-        backend.delete_mapping(
-            port,
-            protocol,
-            remote_host=existing.remote_host,
-        )
+        backend.delete_mapping(port, protocol, remote_host=existing.remote_host)
     except UpnpError as exc:
-        logger.error('Failed to delete %s/%s: %s', protocol, port, exc)
+        logger.error(f'Failed to delete {target}: {exc}')
         return False
-    logger.info('%s/%s deleted', protocol, port)
+    logger.info(f'{target} deleted')
     return True
 
 
-def process_ports(
-    backend: UpnpBackend,
-    protocols: list[str],
-    ports: list[int],
-    candidates: list[str],
-    description: str,
-    lease_seconds: int,
-    force: bool,
-) -> int:
-    '''Ensure all ports for all protocols; return number of failures.'''
-    failed = 0
-    for protocol in protocols:
-        for port in ports:
-            ok = ensure_port(
-                backend,
-                protocol,
-                port,
-                candidates,
-                description,
-                lease_seconds,
-                force=force,
-            )
-            if not ok:
-                failed += 1
-    return failed
-
-
-def process_removes(
-    backend: UpnpBackend,
-    protocols: list[str],
-    ports: list[int],
-    description: str,
-    force: bool,
-) -> int:
-    '''Remove all ports for all protocols; return number of failures.'''
-    failed = 0
-    for protocol in protocols:
-        for port in ports:
-            ok = remove_port(
-                backend,
-                protocol,
-                port,
-                description,
-                force=force,
-            )
-            if not ok:
-                failed += 1
-    return failed
-
+# --- Commands ---
 
 def cmd_iface_list() -> int:
     entries = list_all_iface_ipv4()
@@ -424,126 +304,58 @@ def cmd_ip_list() -> int:
 def cmd_list(protocols: list[str]) -> int:
     try:
         backend = create_backend()
-    except UpnpError as exc:
-        logger.error('%s', exc)
-        return 3
-
-    try:
         mappings = backend.list_mappings()
     except UpnpError as exc:
-        logger.error('Failed to list mappings: %s', exc)
+        logger.error(f'{exc}')
         return 3
 
-    allowed = set(protocols)
-    printed = 0
-    for m in mappings:
-        if m.protocol not in allowed:
-            continue
+    selected = [m for m in mappings if m.protocol in protocols]
+    for m in selected:
         print(
             f'{m.protocol}/{m.external_port} -> '
             f'{m.internal_ip}:{m.internal_port} '
             f'desc={m.description!r} lease={m.lease_time}'
         )
-        printed += 1
-    logger.info('Listed %s mapping(s)', printed)
+    logger.info(f'Listed {len(selected)} mapping(s)')
     return 0
 
 
-def run_ensure(
+def run_batch(
     protocols: list[str],
     ports: list[int],
-    candidates: list[str],
-    description: str,
-    lease_seconds: int,
-    force: bool,
+    action: Callable[[UpnpBackend, str, int], bool],
+    noun: str,
 ) -> int:
-    logger.info(
-        'Start ensure: protocols=%s ports=%s force=%s',
-        protocols,
-        ports,
-        force,
-    )
-    if not candidates:
-        logger.error('Could not determine internal IPv4 address')
-        return 2
-    logger.info('Selected internal IPv4 candidate order: %s', ', '.join(candidates))
-
+    '''Apply action to every protocol x port pair; return exit code.'''
     try:
         backend = create_backend()
     except UpnpError as exc:
-        logger.error('%s', exc)
+        logger.error(f'{exc}')
         return 3
 
     total = len(protocols) * len(ports)
-    failed = process_ports(
-        backend,
-        protocols,
-        ports,
-        candidates,
-        description,
-        lease_seconds,
-        force,
+    failed = sum(
+        not action(backend, protocol, port)
+        for protocol in protocols
+        for port in ports
     )
     if failed:
-        logger.error('Finished with %s/%s port(s) failed', failed, total)
+        logger.error(f'Finished with {failed}/{total} {noun}(s) failed')
         return 4
-
-    logger.info('Finished successfully: %s port(s) ok', total)
-    return 0
-
-
-def run_remove(
-    protocols: list[str],
-    ports: list[int],
-    description: str,
-    force: bool,
-) -> int:
-    logger.info(
-        'Start remove: protocols=%s ports=%s force=%s',
-        protocols,
-        ports,
-        force,
-    )
-    try:
-        backend = create_backend()
-    except UpnpError as exc:
-        logger.error('%s', exc)
-        return 3
-
-    total = len(protocols) * len(ports)
-    failed = process_removes(
-        backend,
-        protocols,
-        ports,
-        description,
-        force,
-    )
-    if failed:
-        logger.error('Finished with %s/%s remove(s) failed', failed, total)
-        return 4
-
-    logger.info('Finished successfully: %s remove(s) ok', total)
+    logger.info(f'Finished successfully: {total} {noun}(s) ok')
     return 0
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    args = docopt(
-        __doc__,
-        argv=argv,
-        version=f'ports-ipv4-upnp {__version__}',
-    )
-
-    log_level = args['--log-level'] or LOG_LEVEL
-    setup_logging(log_level)
+    args = docopt(__doc__, argv=argv, version=f'ports-ipv4-upnp {__version__}')
+    setup_logging(args['--log-level'] or LOG_LEVEL)
 
     if args['--iface-list']:
         return cmd_iface_list()
-
     if args['--ip-list']:
         return cmd_ip_list()
 
     protocols = parse_protocols(args['--proto'])
-
     if args['--list']:
         return cmd_list(protocols)
 
@@ -552,27 +364,31 @@ def main(argv: Optional[list[str]] = None) -> int:
     force = bool(args['--force'])
 
     if args['--remove']:
-        return run_remove(protocols, ports, description, force)
+        logger.info(f'Start remove: protocols={protocols} ports={ports} force={force}')
+        return run_batch(
+            protocols,
+            ports,
+            lambda backend, protocol, port: remove_port(
+                backend, protocol, port, description, force=force
+            ),
+            noun='remove',
+        )
 
-    lease_raw = args['--lease']
-    if lease_raw:
-        try:
-            lease_seconds = int(lease_raw)
-        except ValueError:
-            cli_error(f"Invalid --lease '{lease_raw}'.")
-        if lease_seconds < 0:
-            cli_error('--lease must be >= 0.')
-    else:
-        lease_seconds = LEASE_SECONDS
-
+    lease_seconds = parse_lease(args['--lease'])
+    logger.info(f'Start ensure: protocols={protocols} ports={ports} force={force}')
     candidates = resolve_candidates(args['--iface'], args['--ip'])
-    return run_ensure(
+    if not candidates:
+        logger.error('Could not determine internal IPv4 address')
+        return 2
+    logger.info(f"Selected internal IPv4 candidate order: {', '.join(candidates)}")
+
+    return run_batch(
         protocols,
         ports,
-        candidates,
-        description,
-        lease_seconds,
-        force,
+        lambda backend, protocol, port: ensure_port(
+            backend, protocol, port, candidates, description, lease_seconds, force=force
+        ),
+        noun='port',
     )
 
 
