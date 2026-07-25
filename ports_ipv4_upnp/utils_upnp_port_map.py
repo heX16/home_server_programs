@@ -75,14 +75,18 @@ class MiniupnpcBackend(UpnpBackend):
         # miniupnpc discoverdelay is milliseconds; env timeout is seconds.
         upnp.discoverdelay = max(1, SSDP_SEARCH_TIMEOUT) * 1000
         try:
+            # Find devices on the local network that can open ports.
+            # Returns a count (how many devices were found).
             found = upnp.discover()
         except Exception as exc:
             raise UpnpError(f'UPnP discovery failed: {exc}') from exc
 
-        if not found:
+        if found == 0:
             raise UpnpError('No UPnP IGD devices discovered')
 
         try:
+            # The library chooses one router for us.
+            # From now on we talk only to that router (list / add / delete ports).
             location = upnp.selectigd()
         except Exception as exc:
             raise UpnpError(f'IGD not available: {exc}') from exc
