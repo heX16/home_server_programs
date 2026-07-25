@@ -22,7 +22,8 @@ Options:
   --force                  Overwrite/delete foreign mappings
   --proto=PROTO            TCP, UDP, BOTH, or TCP,UDP [default: TCP]
   --iface=IFACE            Internal IP from this interface
-  --ip=IP                  Explicit internal IPv4
+                           (if no --iface/--ip: auto-detect iface via default route)
+  --ip=IP                  Explicit internal IPv4 (beats --iface / auto-detect)
   --lease=SECONDS          Mapping lease (overrides LEASE_SECONDS)
   --description=DESC       Ownership tag (overrides DESCRIPTION)
   --log-level=LEVEL        Logging level (overrides LOG_LEVEL)
