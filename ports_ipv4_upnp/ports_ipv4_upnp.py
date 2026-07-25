@@ -69,14 +69,12 @@ logger = logging.getLogger('ports_ipv4_upnp')
 
 
 def setup_logging(level_name: str) -> None:
-    level = getattr(logging, level_name.upper(), logging.INFO)
-    handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(logging.Formatter('%(levelname)s %(name)s: %(message)s'))
-    root = logging.getLogger()
-    root.handlers.clear()
-    root.addHandler(handler)
-    root.setLevel(level)
-    logger.setLevel(level)
+    logging.basicConfig(
+        level=getattr(logging, level_name.upper(), logging.INFO),
+        format='%(levelname)s %(name)s: %(message)s',
+        stream=sys.stderr,
+        force=True,
+    )
 
 
 def cli_error(message: str) -> None:
@@ -87,40 +85,29 @@ def cli_error(message: str) -> None:
 # --- CLI parsing helpers ---
 
 def parse_ports_csv(raw: str) -> list[int]:
-    ports: list[int] = []
-    for part in str(raw).split(','):
-        part = part.strip()
-        if not part:
-            continue
-        try:
-            port = int(part)
-        except ValueError:
-            cli_error(f"Invalid port '{part}'.")
+    parts = [part.strip() for part in str(raw).split(',') if part.strip()]
+    if not parts:
+        cli_error('Empty --ports= (need at least one port).')
+    try:
+        ports = [int(part) for part in parts]
+    except ValueError:
+        cli_error(f"Invalid --ports value: {raw!r}.")
+    for port in ports:
         if not 1 <= port <= 65535:
             cli_error(f'Port {port} out of range (1-65535).')
-        ports.append(port)
-    if not ports:
-        cli_error('Empty --ports= (need at least one port).')
     return ports
 
 
 def parse_protocols(raw: str) -> list[str]:
-    hint = 'expected TCP, UDP, BOTH, or TCP,UDP'
+    hint = 'expected one of: TCP, UDP, BOTH, TCP,UDP, UDP,TCP'
     text = str(raw).strip().upper()
-    if text == 'BOTH':
+    if text == 'TCP':
+        return ['TCP']
+    if text == 'UDP':
+        return ['UDP']
+    if text in ('BOTH', 'TCP,UDP', 'UDP,TCP'):
         return ['TCP', 'UDP']
-    protocols: list[str] = []
-    for part in text.split(','):
-        part = part.strip()
-        if not part:
-            continue
-        if part not in ('TCP', 'UDP'):
-            cli_error(f"Invalid protocol '{part}' ({hint}).")
-        if part not in protocols:
-            protocols.append(part)
-    if not protocols:
-        cli_error(f'Empty --proto= ({hint}).')
-    return protocols
+    cli_error(f"Invalid --proto= {raw!r} ({hint}).")
 
 
 def parse_lease(raw: Optional[str]) -> int:
