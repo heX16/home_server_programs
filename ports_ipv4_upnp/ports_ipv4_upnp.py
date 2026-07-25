@@ -8,13 +8,12 @@ Exit codes:
   0  success (no ports, or all ports in desired state)
   1  invalid CLI / protocol / port
   2  could not determine internal IPv4
-  3  async-upnp-client missing or IGD unavailable
+  3  miniupnpc missing or IGD unavailable
   4  one or more ports failed to map/refresh
 '''
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 import re
@@ -33,10 +32,6 @@ LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
 ROUTE_PROBE_DST = '1.1.1.1'
 IGD_RETRY_CODES = {606}  # Action not authorized — often wrong internal IP
 SSDP_SEARCH_TIMEOUT = int(os.environ.get('SSDP_SEARCH_TIMEOUT', '5'))
-IGD_SEARCH_TARGETS = (
-    'urn:schemas-upnp-org:device:InternetGatewayDevice:2',
-    'urn:schemas-upnp-org:device:InternetGatewayDevice:1',
-)
 
 logger = logging.getLogger('ports_ipv4_upnp')
 
@@ -68,15 +63,15 @@ class UpnpError(Exception):
 
 
 class UpnpBackend:
-    '''Abstract async IPv4 IGD backend.'''
+    '''Abstract sync IPv4 IGD backend.'''
 
-    async def discover(self) -> str:
+    def discover(self) -> str:
         raise NotImplementedError
 
-    async def list_mappings(self) -> list[PortMapping]:
+    def list_mappings(self) -> list[PortMapping]:
         raise NotImplementedError
 
-    async def add_mapping(
+    def add_mapping(
         self,
         internal_ip: str,
         port: int,
@@ -86,151 +81,118 @@ class UpnpBackend:
     ) -> None:
         raise NotImplementedError
 
-    async def delete_mapping(self, port: int, protocol: str, remote_host: str = '') -> None:
+    def delete_mapping(self, port: int, protocol: str, remote_host: str = '') -> None:
         raise NotImplementedError
 
 
-class AsyncUpnpClientBackend(UpnpBackend):
-    '''IGD backend based on async-upnp-client.'''
+class MiniupnpcBackend(UpnpBackend):
+    '''IGD backend based on miniupnpc (synchronous).'''
 
     def __init__(self):
         try:
-            from async_upnp_client.aiohttp import AiohttpRequester
-            from async_upnp_client.client_factory import UpnpFactory
-            from async_upnp_client.exceptions import UpnpActionError
-            from async_upnp_client.profiles.igd import IgdDevice
-            from async_upnp_client.search import async_search
+            import miniupnpc
         except ImportError as exc:
             raise UpnpError(
-                'async-upnp-client is not installed '
-                '(pip install async-upnp-client)'
+                'miniupnpc is not installed '
+                '(apt install python3-miniupnpc / pip install miniupnpc)'
             ) from exc
 
-        self._AiohttpRequester = AiohttpRequester
-        self._UpnpFactory = UpnpFactory
-        self._UpnpActionError = UpnpActionError
-        self._IgdDevice = IgdDevice
-        self._async_search = async_search
-        self._igd: Optional[object] = None
-        self._location = ''
+        self._miniupnpc = miniupnpc
+        self._upnp: Optional[object] = None
 
-    async def discover(self) -> str:
-        locations = await self._discover_locations()
-        if not locations:
+    def discover(self) -> str:
+        upnp = self._miniupnpc.UPnP()
+        # miniupnpc discoverdelay is milliseconds; env timeout is seconds.
+        upnp.discoverdelay = max(1, SSDP_SEARCH_TIMEOUT) * 1000
+        try:
+            found = upnp.discover()
+        except Exception as exc:
+            raise UpnpError(f'UPnP discovery failed: {exc}') from exc
+
+        if not found:
             raise UpnpError('No UPnP IGD devices discovered')
 
-        last_err: Optional[Exception] = None
-        requester = self._AiohttpRequester(timeout=10)
-        factory = self._UpnpFactory(requester, non_strict=True)
+        try:
+            location = upnp.selectigd()
+        except Exception as exc:
+            raise UpnpError(f'IGD not available: {exc}') from exc
 
-        for location in locations:
-            try:
-                device = await factory.async_create_device(location)
-                igd = self._IgdDevice(device, event_handler=None)
-                # Prefer devices that actually expose port-mapping actions.
-                action = igd._any_action(['WANIPC', 'WANPPPC'], 'AddPortMapping')
-                if action is None:
-                    logger.debug(
-                        'Skipping %s: no AddPortMapping action',
-                        location,
-                    )
-                    continue
-                self._igd = igd
-                self._location = location
-                name = getattr(device, 'friendly_name', None) or device.device_type
-                return f'{name} @ {location}'
-            except Exception as exc:  # noqa: BLE001 — try next location
-                last_err = exc
-                logger.debug('Failed to init IGD at %s: %s', location, exc)
+        if not location:
+            raise UpnpError('IGD not available (selectigd returned empty)')
 
-        detail = f': {last_err}' if last_err else ''
-        raise UpnpError(f'IGD not available{detail}')
+        self._upnp = upnp
+        lan = getattr(upnp, 'lanaddr', '') or ''
+        try:
+            wan = upnp.externalipaddress() or ''
+        except Exception:
+            wan = ''
+        detail = f'{location}'
+        if lan or wan:
+            detail = f'{location} (lan={lan or "?"}, wan={wan or "?"})'
+        return detail
 
-    async def _discover_locations(self) -> list[str]:
-        found: list[str] = []
-        seen: set[str] = set()
-
-        async def _on_response(headers) -> None:
-            loc = headers.get('location')
-            if not loc:
-                return
-            loc = str(loc).strip()
-            if not loc or loc in seen:
-                return
-            # Prefer IPv4 description URLs.
-            if loc.startswith('http://[') or loc.startswith('https://['):
-                return
-            seen.add(loc)
-            found.append(loc)
-
-        for st in IGD_SEARCH_TARGETS:
-            logger.debug('SSDP search ST=%s timeout=%ss', st, SSDP_SEARCH_TIMEOUT)
-            try:
-                await self._async_search(
-                    async_callback=_on_response,
-                    timeout=SSDP_SEARCH_TIMEOUT,
-                    search_target=st,
-                )
-            except OSError as exc:
-                logger.debug('SSDP search failed for %s: %s', st, exc)
-            if found:
-                break
-
-        logger.debug('Discovered IGD locations: %s', found)
-        return found
-
-    def _require_igd(self):
-        if self._igd is None:
+    def _require_upnp(self):
+        if self._upnp is None:
             raise UpnpError('IGD not discovered yet')
-        return self._igd
+        return self._upnp
 
-    async def list_mappings(self) -> list[PortMapping]:
-        igd = self._require_igd()
+    def list_mappings(self) -> list[PortMapping]:
+        upnp = self._require_upnp()
         out: list[PortMapping] = []
         idx = 0
         while idx < 1024:
             try:
-                entry = await igd.async_get_generic_port_mapping_entry(idx)
-            except self._UpnpActionError as exc:
+                entry = upnp.getgenericportmapping(idx)
+            except Exception as exc:
+                # Some IGDs raise at end-of-list instead of returning None.
                 logger.debug(
-                    'GetGenericPortMappingEntry(%s) ended: code=%s desc=%s',
+                    'GetGenericPortMappingEntry(%s) ended: %s',
                     idx,
-                    getattr(exc, 'error_code', None),
-                    getattr(exc, 'error_desc', None),
+                    exc,
                 )
                 break
-            except Exception as exc:
-                code = _extract_igd_code_from_exc(exc)
-                raise UpnpError(
-                    f'Failed to list mappings at index {idx}: {exc}',
-                    code=code,
-                ) from exc
 
             if entry is None:
                 break
 
-            remote = ''
-            if entry.remote_host is not None:
-                remote = str(entry.remote_host)
-            lease = 0
-            if entry.lease_duration is not None:
-                lease = int(entry.lease_duration.total_seconds())
+            try:
+                # (ext_port, proto, (int_ip, int_port), desc, enabled, remote, lease)
+                ext_port = int(entry[0])
+                protocol = str(entry[1]).upper()
+                internal = entry[2]
+                if isinstance(internal, (tuple, list)) and len(internal) >= 2:
+                    internal_ip = str(internal[0])
+                    internal_port = int(internal[1])
+                else:
+                    internal_ip = str(internal)
+                    internal_port = ext_port
+                # NAT-PMP/PCP may report NewInternalPort=0; treat as external port.
+                if internal_port == 0:
+                    internal_port = ext_port
+                description = str(entry[3] or '')
+                remote_host = str(entry[5] or '') if len(entry) > 5 else ''
+                lease_time = int(entry[6]) if len(entry) > 6 and entry[6] not in (None, '') else 0
+            except (TypeError, ValueError, IndexError) as exc:
+                raise UpnpError(
+                    f'Failed to parse mapping at index {idx}: {entry!r} ({exc})',
+                    code=_extract_igd_code_from_exc(exc),
+                ) from exc
 
             out.append(
                 PortMapping(
-                    protocol=str(entry.protocol).upper(),
-                    external_port=int(entry.external_port),
-                    internal_ip=str(entry.internal_client),
-                    internal_port=int(entry.internal_port),
-                    description=str(entry.description or ''),
-                    remote_host=remote,
-                    lease_time=lease,
+                    protocol=protocol,
+                    external_port=ext_port,
+                    internal_ip=internal_ip,
+                    internal_port=internal_port,
+                    description=description,
+                    remote_host=remote_host,
+                    lease_time=lease_time,
                 )
             )
             idx += 1
         return out
 
-    async def add_mapping(
+    def add_mapping(
         self,
         internal_ip: str,
         port: int,
@@ -238,38 +200,32 @@ class AsyncUpnpClientBackend(UpnpBackend):
         description: str,
         lease_seconds: int,
     ) -> None:
-        igd = self._require_igd()
-        action = igd._any_action(['WANIPC', 'WANPPPC'], 'AddPortMapping')
-        if action is None:
-            raise UpnpError('AddPortMapping action not available on IGD')
+        upnp = self._require_upnp()
         try:
-            # Empty NewRemoteHost = mapping applies to all remote hosts (UPnP spec).
-            await action.async_call(
-                NewRemoteHost='',
-                NewExternalPort=port,
-                NewProtocol=protocol,
-                NewInternalPort=port,
-                NewInternalClient=internal_ip,
-                NewEnabled=True,
-                NewPortMappingDescription=description,
-                NewLeaseDuration=int(lease_seconds),
+            # Signature: (ext_port, proto, int_ip, int_port, desc, remote_host[, lease])
+            ok = upnp.addportmapping(
+                port,
+                protocol,
+                internal_ip,
+                port,
+                description,
+                '',
+                int(lease_seconds),
             )
         except Exception as exc:
             code = _extract_igd_code_from_exc(exc)
             raise UpnpError(f'AddPortMapping failed: {exc}', code=code) from exc
 
-    async def delete_mapping(
+        if not ok:
+            raise UpnpError('AddPortMapping returned false')
+
+    def delete_mapping(
         self,
         port: int,
         protocol: str,
         remote_host: str = '',
     ) -> None:
-        igd = self._require_igd()
-        action = igd._any_action(['WANIPC', 'WANPPPC'], 'DeletePortMapping')
-        if action is None:
-            logger.debug('DeletePortMapping action not available')
-            return
-
+        upnp = self._require_upnp()
         candidates = [remote_host or '']
         if '0.0.0.0' not in candidates:
             candidates.append('0.0.0.0')
@@ -278,12 +234,18 @@ class AsyncUpnpClientBackend(UpnpBackend):
 
         for rh in candidates:
             try:
-                await action.async_call(
-                    NewRemoteHost=rh,
-                    NewExternalPort=port,
-                    NewProtocol=protocol,
+                if rh:
+                    ok = upnp.deleteportmapping(port, protocol, rh)
+                else:
+                    ok = upnp.deleteportmapping(port, protocol)
+                if ok:
+                    return
+                logger.debug(
+                    'DeletePortMapping %s/%s remote=%r returned false',
+                    protocol,
+                    port,
+                    rh,
                 )
-                return
             except Exception as exc:
                 logger.debug(
                     'DeletePortMapping %s/%s remote=%r: %s',
@@ -296,11 +258,14 @@ class AsyncUpnpClientBackend(UpnpBackend):
 
 def _extract_igd_code(text: str) -> Optional[int]:
     m = re.search(r'\b(?:code\s+)?(\d{3})\b', text)
-    if not m:
-        return None
-    code = int(m.group(1))
-    if 600 <= code <= 799:
-        return code
+    if m:
+        code = int(m.group(1))
+        if 600 <= code <= 799:
+            return code
+    # miniupnpc often returns the UPnP description without the numeric code.
+    lowered = text.lower()
+    if 'action not authorized' in lowered:
+        return 606
     return None
 
 
@@ -496,10 +461,10 @@ def build_internal_ip_candidates(explicit_ip: str) -> list[str]:
     return candidates
 
 
-async def create_async_backend() -> AsyncUpnpClientBackend:
-    backend = AsyncUpnpClientBackend()
-    igd = await backend.discover()
-    logger.info('Using async-upnp-client; IGD=%s', igd)
+def create_backend() -> MiniupnpcBackend:
+    backend = MiniupnpcBackend()
+    igd = backend.discover()
+    logger.info('Using miniupnpc; IGD=%s', igd)
     return backend
 
 
@@ -514,7 +479,7 @@ def find_mapping(
     return None
 
 
-async def ensure_port_async(
+def ensure_port(
     backend: UpnpBackend,
     protocol: str,
     port: int,
@@ -524,7 +489,7 @@ async def ensure_port_async(
 ) -> bool:
     '''Return True on success for this port.'''
     try:
-        mappings = await backend.list_mappings()
+        mappings = backend.list_mappings()
     except UpnpError as exc:
         logger.error(
             'Failed to list mappings before %s/%s: %s',
@@ -552,7 +517,7 @@ async def ensure_port_async(
                 existing.description,
                 ', '.join(try_ips),
             )
-            await backend.delete_mapping(
+            backend.delete_mapping(
                 port,
                 protocol,
                 remote_host=existing.remote_host,
@@ -580,7 +545,7 @@ async def ensure_port_async(
     last_err: Optional[UpnpError] = None
     for ip in try_ips:
         try:
-            await backend.add_mapping(ip, port, protocol, description, lease_seconds)
+            backend.add_mapping(ip, port, protocol, description, lease_seconds)
             logger.info(
                 '%s/%s mapped to %s (lease=%ss, desc=%r)',
                 protocol,
@@ -617,7 +582,7 @@ async def ensure_port_async(
     return False
 
 
-async def process_ports(
+def process_ports(
     backend: UpnpBackend,
     protocol: str,
     ports: list[int],
@@ -628,7 +593,7 @@ async def process_ports(
     '''Process all ports sequentially; return number of failures.'''
     failed = 0
     for port in ports:
-        ok = await ensure_port_async(
+        ok = ensure_port(
             backend,
             protocol,
             port,
@@ -641,7 +606,7 @@ async def process_ports(
     return failed
 
 
-async def async_main(protocol: str, ports: list[int]) -> int:
+def run(protocol: str, ports: list[int]) -> int:
     logger.info('Start: protocol=%s ports=%s', protocol, ports)
 
     candidates = build_internal_ip_candidates(INTERNAL_IP.strip())
@@ -651,12 +616,12 @@ async def async_main(protocol: str, ports: list[int]) -> int:
     logger.info('Selected internal IPv4 candidate order: %s', ', '.join(candidates))
 
     try:
-        backend = await create_async_backend()
+        backend = create_backend()
     except UpnpError as exc:
         logger.error('%s', exc)
         return 3
 
-    failed = await process_ports(
+    failed = process_ports(
         backend,
         protocol,
         ports,
@@ -680,7 +645,7 @@ def main(argv: list[str]) -> int:
     if not ports:
         return 0
 
-    return asyncio.run(async_main(protocol, ports))
+    return run(protocol, ports)
 
 
 if __name__ == '__main__':
