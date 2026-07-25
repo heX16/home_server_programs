@@ -21,11 +21,11 @@ python3 ports_ipv4_upnp.py --remove --ports=16022
 
 # List IGD mappings / local interfaces / IPs
 python3 ports_ipv4_upnp.py --list
-python3 ports_ipv4_upnp.py --iface-list
-python3 ports_ipv4_upnp.py --ip-list
+python3 ports_ipv4_upnp.py --list-iface
+python3 ports_ipv4_upnp.py --list-ip
 
 # Pin internal address
-python3 ports_ipv4_upnp.py --ports=16022 --iface=eth0
+python3 ports_ipv4_upnp.py --ports=16022 --ip-iface=eth0
 python3 ports_ipv4_upnp.py --ports=16022 --ip=192.168.1.10
 ```
 
@@ -39,12 +39,12 @@ Owned mappings (matching `DESCRIPTION` / `--description`) are refreshed; foreign
 | `--add` | Same as bare `--ports` (ensure/sync) |
 | `--remove` | Delete mappings for `--ports` |
 | `--list` | List IGD port mappings |
-| `--iface-list` | List local IPv4 interfaces/addresses (needs iproute2) |
-| `--ip-list` | List local IPv4 addresses (cross-platform; Windows OK) |
+| `--list-iface` | List local IPv4 interfaces/addresses (needs iproute2) |
+| `--list-ip` | List local IPv4 addresses (cross-platform; Windows OK) |
 | `--force` | Overwrite/delete foreign mappings |
 | `--proto=PROTO` | `TCP`, `UDP`, `BOTH`, or `TCP,UDP` (default `TCP`) |
-| `--iface=IFACE` | Internal IP from this interface (beats `INTERNAL_IP`) |
-| `--ip=IP` | Explicit internal IPv4 (beats `INTERNAL_IP`) |
+| `--ip-iface=IFACE` | Internal IP candidates from this interface (beats `INTERNAL_IP`); all non-loopback IPv4 are tried (DHCP first, then static) until `AddPortMapping` succeeds — not one mapping per address |
+| `--ip=IP` | Explicit internal IPv4 (beats `INTERNAL_IP` / `--ip-iface`) |
 | `--lease=SECONDS` | Mapping lease (overrides `LEASE_SECONDS`) |
 | `--description=DESC` | Ownership tag (overrides `DESCRIPTION`) |
 | `--log-level=LEVEL` | Logging level (overrides `LOG_LEVEL`) |
@@ -58,11 +58,11 @@ Empty `--ports=` is a CLI error (exit 1). Positional `TCP 16022` is no longer su
 |---|---|---|
 | `LEASE_SECONDS` | `3600` | Mapping lease |
 | `DESCRIPTION` | `ports-ipv4-upnp` | Ownership tag |
-| `INTERNAL_IP` | *(auto)* | Force internal client IP (if `--ip`/`--iface` not set) |
+| `INTERNAL_IP` | *(auto)* | Force internal client IP (if `--ip`/`--ip-iface` not set) |
 | `LOG_LEVEL` | `INFO` | Logging |
 | `SSDP_SEARCH_TIMEOUT` | `5` | SSDP discovery timeout (s); sets miniupnpc `discoverdelay` |
 
-Without `--ip` / `--iface` / `INTERNAL_IP`, the script picks candidates from the default route (DHCP first if several addresses). On Windows / hosts without iproute2, a UDP socket probe is used. `--iface-list` needs iproute2; use `--ip-list` on Windows.
+Without `--ip` / `--ip-iface` / `INTERNAL_IP`, the script picks candidates from the default route (DHCP first if several addresses). With `--ip-iface`, every non-loopback IPv4 on that interface becomes a candidate (DHCP before static); mapping uses the first IP that succeeds (further candidates mainly on IGD code 606). On Windows / hosts without iproute2, a UDP socket probe is used. `--list-iface` needs iproute2; use `--list-ip` on Windows.
 
 ## Exit codes
 

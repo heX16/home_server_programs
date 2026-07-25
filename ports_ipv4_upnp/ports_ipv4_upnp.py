@@ -3,13 +3,13 @@
 
 Usage:
   ports_ipv4_upnp.py [--add] --ports=PORTS [--force] [--proto=PROTO]
-                     [--iface=IFACE | --ip=IP]
+                     [--ip-iface=IFACE | --ip=IP]
                      [--lease=SECONDS] [--description=DESC] [--log-level=LEVEL]
   ports_ipv4_upnp.py --remove --ports=PORTS [--force] [--proto=PROTO]
-                     [--lease=SECONDS] [--description=DESC] [--log-level=LEVEL]
+                     [--description=DESC] [--log-level=LEVEL]
   ports_ipv4_upnp.py --list [--proto=PROTO] [--log-level=LEVEL]
-  ports_ipv4_upnp.py --iface-list [--log-level=LEVEL]
-  ports_ipv4_upnp.py --ip-list [--log-level=LEVEL]
+  ports_ipv4_upnp.py --list-iface [--log-level=LEVEL]
+  ports_ipv4_upnp.py --list-ip [--log-level=LEVEL]
   ports_ipv4_upnp.py (-h | --help | --version)
 
 Options:
@@ -17,13 +17,14 @@ Options:
   --add                    Same as bare --ports (ensure/sync)
   --remove                 Delete mappings for --ports
   --list                   List IGD mappings
-  --iface-list             List local IPv4 interfaces/addresses (needs iproute2)
-  --ip-list                List local IPv4 addresses (cross-platform)
+  --list-iface             List local IPv4 interfaces/addresses (needs iproute2)
+  --list-ip                List local IPv4 addresses (cross-platform)
   --force                  Overwrite/delete foreign mappings
   --proto=PROTO            TCP, UDP, BOTH, or TCP,UDP [default: TCP]
-  --iface=IFACE            Internal IP from this interface
-                           (if no --iface/--ip: auto-detect iface via default route)
-  --ip=IP                  Explicit internal IPv4 (beats --iface / auto-detect)
+  --ip-iface=IFACE         Internal IP candidates from this interface
+                           (all IPv4; DHCP then static; first success wins;
+                           if no --ip-iface/--ip: auto-detect via default route)
+  --ip=IP                  Explicit internal IPv4 (beats --ip-iface / auto-detect)
   --lease=SECONDS          Mapping lease (overrides LEASE_SECONDS)
   --description=DESC       Ownership tag (overrides DESCRIPTION)
   --log-level=LEVEL        Logging level (overrides LOG_LEVEL)
@@ -124,12 +125,12 @@ def parse_lease(raw: Optional[str]) -> int:
 
 
 def resolve_candidates(iface: Optional[str], ip: Optional[str]) -> list[str]:
-    '''CLI --ip / --iface beat env INTERNAL_IP; else auto-detect.'''
+    '''CLI --ip / --ip-iface beat env INTERNAL_IP; else auto-detect.'''
     if ip:
         logger.info(f'Using explicit --ip={ip}')
         return [ip]
     if iface:
-        logger.info(f'Using --iface={iface}')
+        logger.info(f'Using --ip-iface={iface}')
         return candidates_from_iface(iface)
     return build_internal_ip_candidates(INTERNAL_IP.strip())
 
@@ -266,7 +267,7 @@ def cmd_iface_list() -> int:
         if not iproute2_available():
             logger.error(
                 'Could not list interfaces (iproute2 unavailable; '
-                'use --ip-list on Windows, or pass --ip=)'
+                'use --list-ip on Windows, or pass --ip=)'
             )
             return 2
         logger.info('No non-loopback IPv4 addresses found')
@@ -339,9 +340,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = docopt(__doc__, argv=argv, version=f'ports-ipv4-upnp {__version__}')
     setup_logging(args['--log-level'] or LOG_LEVEL)
 
-    if args['--iface-list']:
+    if args['--list-iface']:
         return cmd_iface_list()
-    if args['--ip-list']:
+    if args['--list-ip']:
         return cmd_ip_list()
 
     protocols = parse_protocols(args['--proto'])
@@ -365,7 +366,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     lease_seconds = parse_lease(args['--lease'])
     logger.info(f'Start ensure: protocols={protocols} ports={ports} force={force}')
-    candidates = resolve_candidates(args['--iface'], args['--ip'])
+    candidates = resolve_candidates(args['--ip-iface'], args['--ip'])
     if not candidates:
         logger.error('Could not determine internal IPv4 address')
         return 2
