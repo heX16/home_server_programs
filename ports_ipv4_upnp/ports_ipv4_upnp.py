@@ -46,14 +46,14 @@ from typing import Callable, Optional
 
 from docopt import docopt
 
-from net_iface import (
+from utils_net_iface import (
     build_internal_ip_candidates,
     candidates_from_iface,
     iproute2_available,
     list_all_iface_ipv4,
     list_local_ipv4,
 )
-from upnp_port_map import MiniupnpcBackend, PortMapping, UpnpBackend, UpnpError
+from utils_upnp_port_map import MiniupnpcBackend, PortMapping, UpnpBackend, UpnpError
 
 __version__ = '0.2.0'
 
@@ -164,7 +164,7 @@ def ensure_port(
     force: bool = False,
 ) -> bool:
     '''Return True on success for this port.'''
-    
+
     target = f'{protocol}/{port}'
     try:
         existing = find_mapping(backend, port, protocol)
