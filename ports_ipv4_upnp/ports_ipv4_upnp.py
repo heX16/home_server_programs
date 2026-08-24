@@ -61,7 +61,7 @@ __version__ = '0.2.0'
 
 # --- Configuration (edit / template-substitute as needed) ---
 LEASE_SECONDS = int(os.environ.get('LEASE_SECONDS', '3600'))
-DESCRIPTION = os.environ.get('DESCRIPTION', 'ports-ipv4-upnp')
+DESCRIPTION = os.environ.get('DESCRIPTION', 'ports-ipv4-upnp.py')
 INTERNAL_IP = os.environ.get('INTERNAL_IP', '')
 LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
 
